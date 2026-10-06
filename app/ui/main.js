@@ -133,7 +133,15 @@ function targetDims(v) {
   if (v === "pill") return PILL;
   const layer = LAYERS[v];
   // Layers are always laid out (just invisible), so this measures for real.
-  return { w: layer.offsetWidth + 2, h: Math.min(layer.offsetHeight, 470) + 2, r: CARD_RADIUS };
+  let h = layer.offsetHeight;
+  if (v === "settings") {
+    // The layer may be stretched to the surface; use the visible pane's own
+    // height instead of whatever the pane area currently happens to be.
+    const panes = el("panes");
+    const pane = panes.querySelector(`.pane[data-pane="${activeTab}"]`);
+    h = h - panes.offsetHeight + pane.offsetHeight;
+  }
+  return { w: layer.offsetWidth + 2, h: Math.min(h, 470) + 2, r: CARD_RADIUS };
 }
 
 function reportHitRect(d) {
@@ -148,6 +156,10 @@ async function setView(next) {
   const my = ++seq;
   const prev = view;
   view = next;
+
+  // Un-stretch before leaving settings: the surface is at the card's natural
+  // height at this point, so nothing visibly moves.
+  if (prev === "settings") LAYERS.settings.classList.remove("stretch");
 
   const to = targetDims(next);
   const opening = next !== "pill";
@@ -173,14 +185,20 @@ async function setView(next) {
   }
   if (my !== seq) return;
   reportHitRect(to);
+  if (next === "settings") LAYERS.settings.classList.add("stretch");
 }
 
-// When the open card's content changes size (a row dismissed), glide to fit.
-function refit() {
+// Card resizes in place (tab switch, row dismissed): a firm spring with a
+// whisper of overshoot. Keep the larger click area until it lands.
+const SPRING_FIT = springCurve(420, 32);
+async function refit() {
   if (view === "pill") return;
   const to = targetDims(view);
-  reportHitRect(to);
-  morph(to, SPRING_CLOSE);
+  const now = currentDims();
+  reportHitRect({ w: Math.max(now.w, to.w), h: Math.max(now.h, to.h) });
+  const landedOn = view;
+  await morph(to, SPRING_FIT);
+  if (view === landedOn) reportHitRect(to);
 }
 
 // ---------- rendering ----------
@@ -415,13 +433,61 @@ function flashSaved(text, bad = false) {
   savedTimer = setTimeout(() => { s.style.opacity = 0; }, bad ? 5000 : 1400);
 }
 
+const TAB_ORDER = ["profile", "search", "cycle", "model", "log"];
+const paneFor = (t) => document.querySelector(`.pane[data-pane="${t}"]`);
+
+function moveTabIndicator(instant = false) {
+  const btn = el("tabs").querySelector(`button[data-tab="${activeTab}"]`);
+  const ind = el("tabind");
+  ind.classList.toggle("instant", instant);
+  ind.style.width = `${btn.offsetWidth}px`;
+  ind.style.transform = `translateX(${btn.offsetLeft}px)`;
+  if (instant) requestAnimationFrame(() => ind.classList.remove("instant"));
+}
+
 function showTab(tab) {
+  if (tab === activeTab) return;
+  const prevTab = activeTab;
+  const dir = TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(prevTab) ? 1 : -1;
   activeTab = tab;
-  for (const b of el("tabs").children) {
+
+  for (const b of el("tabs").querySelectorAll("button")) {
     b.classList.toggle("on", b.dataset.tab === tab);
     b.setAttribute("aria-selected", b.dataset.tab === tab);
   }
-  for (const p of document.querySelectorAll(".pane")) p.hidden = p.dataset.pane !== tab;
+  moveTabIndicator();
+
+  // Settle any half-finished switch from a fast double click.
+  for (const p of document.querySelectorAll(".pane")) {
+    p.getAnimations().forEach((a) => a.cancel());
+    p.style.position = "";
+    p.hidden = p.dataset.pane !== prevTab;
+  }
+
+  const out = paneFor(prevTab);
+  const inn = paneFor(tab);
+  if (!reduceMotion) {
+    // Outgoing pane floats out of the flow so it can fade over the incoming one.
+    Object.assign(out.style, { position: "absolute", top: "0", left: "0", right: "0" });
+    out.animate(
+      [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-dir * 14}px)` }],
+      { duration: 150, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }
+    ).finished.then(() => {
+      if (activeTab !== prevTab) out.hidden = true;
+      out.style.position = "";
+      out.getAnimations().forEach((a) => a.cancel());
+    }, () => {});
+    inn.hidden = false;
+    inn.animate(
+      [{ opacity: 0, transform: `translateX(${dir * 18}px)`, filter: "blur(2px)" },
+       { opacity: 1, transform: "none", filter: "blur(0)" }],
+      { duration: 300, delay: 70, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }
+    );
+  } else {
+    out.hidden = true;
+    inn.hidden = false;
+  }
+
   if (tab === "model") refreshModels();
   refit();
 }
@@ -551,6 +617,7 @@ function onState(next) {
 
 setDims(PILL);
 reportHitRect(PILL);
+document.fonts.ready.then(() => moveTabIndicator(true));
 LAYERS.pill.classList.add("on");
 LAYERS.pill.style.opacity = 1;
 

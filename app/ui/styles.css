@@ -201,8 +201,21 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 }
 .seg button:hover { color: var(--phosphor); }
 .seg button.on { background: var(--void); color: var(--phosphor); box-shadow: inset 0 0 0 1px var(--line); font-weight: 500; }
-.tabs { margin: 10px 12px 2px 14px; }
+.tabs { margin: 10px 12px 2px 14px; position: relative; flex: none; }
+/* Sliding highlight behind the active tab. */
+.seg-ind {
+  position: absolute; top: 2px; bottom: 2px; left: 0; width: 0; border-radius: 7px;
+  background: var(--void); box-shadow: inset 0 0 0 1px var(--line);
+  transition: transform .38s cubic-bezier(.34, 1.25, .44, 1), width .38s cubic-bezier(.34, 1.25, .44, 1);
+}
+.seg-ind.instant { transition: none; }
+.tabs button { position: relative; z-index: 1; }
+.tabs button.on { background: transparent; box-shadow: none; }
 
+/* While settings are open the layer stretches to the surface, so the footer
+   rides the animated bottom edge; the pane area clips/reveals in between. */
+#setLayer.stretch { bottom: 0; }
+.panes { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .pane { padding: 6px 12px 10px 14px; display: flex; flex-direction: column; }
 .field { display: flex; flex-direction: column; gap: 7px; padding: 10px 0; }
 .field + .field, .field + #anthropicfields, .field + [hidden] + #anthropicfields { border-top: 1px solid var(--line); }
@@ -269,4 +282,5 @@ select {
 
 @media (prefers-reduced-motion: reduce) {
   #surface[data-status="scanning"] .sdot::after { animation: none; }
+  .seg-ind { transition: none; }
 }

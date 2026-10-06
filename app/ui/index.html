@@ -45,6 +45,7 @@
     </header>
 
     <div class="seg tabs" id="tabs" role="tablist">
+      <span class="seg-ind" id="tabind" aria-hidden="true"></span>
       <button role="tab" data-tab="profile" class="on">profile</button>
       <button role="tab" data-tab="search">search</button>
       <button role="tab" data-tab="cycle">cycle</button>
@@ -52,6 +53,7 @@
       <button role="tab" data-tab="log">log</button>
     </div>
 
+    <div class="panes" id="panes">
     <section class="pane" data-pane="profile">
       <div class="field">
         <div class="fhead"><span class="flabel">resume</span><button class="btn" id="pickresume">choose…</button></div>
@@ -154,6 +156,7 @@
         <div class="fval err" id="errtxt"></div>
       </div>
     </section>
+    </div>
 
     <footer class="setfoot">
       <span id="savedtxt"></span>
