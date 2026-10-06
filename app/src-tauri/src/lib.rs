@@ -47,7 +47,22 @@ struct UiState {
 struct Shared {
     ui: Mutex<UiState>,
     scan_now: Sender<()>,
+    hit: Mutex<HitRect>,
 }
+
+/// The visible surface's rect, in logical px relative to the window. The
+/// window is a fixed transparent canvas; everything outside this rect lets
+/// clicks fall through to whatever app is underneath.
+#[derive(Clone, Copy, serde::Deserialize)]
+struct HitRect {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+const WIN_W: f64 = 430.0;
+const INITIAL_HIT: HitRect = HitRect { x: WIN_W - 16.0 - 222.0, y: 8.0, w: 222.0, h: 40.0 };
 
 fn set_state(app: &AppHandle, shared: &Shared, f: impl FnOnce(&mut UiState)) {
     let snapshot = {
@@ -109,21 +124,32 @@ fn open_link(app: AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Resize keeping the TOP-RIGHT corner fixed, so the panel grows down-left
-/// from the pill like the mockup.
 #[tauri::command]
-fn resize_window(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
-    let win = app.get_webview_window("main").ok_or("no window")?;
-    let scale = win.scale_factor().map_err(|e| e.to_string())?;
-    let pos = win.outer_position().map_err(|e| e.to_string())?;
-    let old = win.outer_size().map_err(|e| e.to_string())?;
-    let new_w = (width * scale).round() as i32;
-    let new_x = pos.x + old.width as i32 - new_w;
-    win.set_size(tauri::LogicalSize::new(width, height))
-        .map_err(|e| e.to_string())?;
-    win.set_position(tauri::PhysicalPosition::new(new_x, pos.y))
-        .map_err(|e| e.to_string())?;
-    Ok(())
+fn set_hit_rect(shared: State<Arc<Shared>>, rect: HitRect) {
+    *shared.hit.lock().unwrap() = rect;
+}
+
+/// Webviews can't do per-pixel click-through, so poll the cursor and make
+/// the whole window click-through whenever it's outside the visible surface.
+fn click_through_loop(app: AppHandle, shared: Arc<Shared>) {
+    let mut ignoring: Option<bool> = None;
+    loop {
+        std::thread::sleep(Duration::from_millis(30));
+        let Some(win) = app.get_webview_window("main") else { continue };
+        let (Ok(cur), Ok(pos), Ok(scale)) =
+            (win.cursor_position(), win.outer_position(), win.scale_factor())
+        else {
+            continue;
+        };
+        let lx = (cur.x - pos.x as f64) / scale;
+        let ly = (cur.y - pos.y as f64) / scale;
+        let r = *shared.hit.lock().unwrap();
+        let inside = lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h;
+        let ignore = !inside;
+        if ignoring != Some(ignore) && win.set_ignore_cursor_events(ignore).is_ok() {
+            ignoring = Some(ignore);
+        }
+    }
 }
 
 // ---------- the cycle ----------
@@ -239,6 +265,7 @@ pub fn run() {
             ..Default::default()
         }),
         scan_now: tx,
+        hit: Mutex::new(INITIAL_HIT),
     });
 
     let shared_for_setup = shared.clone();
@@ -252,21 +279,26 @@ pub fn run() {
             job_action,
             open_link,
             quit_app,
-            resize_window
+            set_hit_rect
         ])
         .setup(move |app| {
-            // Pin to the top-right of the monitor, under the menu bar.
+            // Pin to the top-right of the monitor, under the menu bar. The
+            // surface sits 16px inside the canvas, so the pill lands ~20px
+            // from the screen edge.
             if let Some(win) = app.get_webview_window("main") {
                 if let (Ok(Some(mon)), Ok(size)) = (win.current_monitor(), win.outer_size()) {
                     let scale = win.scale_factor().unwrap_or(1.0);
-                    let pad = (16.0 * scale) as i32;
-                    let top = (40.0 * scale) as i32;
+                    let pad = (4.0 * scale) as i32;
+                    let top = (32.0 * scale) as i32;
                     let x = mon.position().x + mon.size().width as i32 - size.width as i32 - pad;
                     let y = mon.position().y + top;
                     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
                 }
             }
             let handle = app.handle().clone();
+            let hit_handle = app.handle().clone();
+            let hit_shared = shared_for_setup.clone();
+            std::thread::spawn(move || click_through_loop(hit_handle, hit_shared));
             std::thread::spawn(move || scheduler(handle, shared_for_setup, rx));
             Ok(())
         })

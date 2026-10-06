@@ -8,35 +8,46 @@
 </head>
 <body>
 
-<div class="pill" id="pill" data-s="rest" data-tauri-drag-region>
-  <span class="sdot"></span>
-  <span id="pilltext">Resting</span>
-  <span class="gear" id="gear" title="Settings">&#9881;</span>
-</div>
+<!-- One surface that physically morphs between pill and panel. Each view
+     is a layer pinned to the surface's top-right; the surface clips them. -->
+<div id="surface" data-view="pill">
 
-<div class="panel hide" id="panel">
-  <header>
-    <span>Top matches</span>
-    <div class="hbtns">
-      <button class="minbtn" id="openall" title="Open all in browser">Open all</button>
-      <button class="minbtn" id="minbtn">Minimize</button>
-    </div>
-  </header>
-  <div id="jobs"></div>
-  <footer id="stats"></footer>
-</div>
+  <div class="layer" id="pillLayer" data-tauri-drag-region>
+    <span class="sdot" id="sdot"></span>
+    <span id="pilltext" data-tauri-drag-region>Resting</span>
+    <button class="gear" id="gear" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+  </div>
 
-<div class="panel hide" id="setpanel">
-  <header>
-    <span>Blip</span>
-    <button class="minbtn" id="setclose">Close</button>
-  </header>
-  <div class="row"><b>Scan now</b><span><button class="minbtn" id="scannow">&#9654; Run</button></span></div>
-  <div class="row"><b>Pause / resume</b><span><button class="minbtn" id="pausebtn">&#9208;</button></span></div>
-  <div class="row"><b>Cycle</b><span id="cycletxt">every 30 min</span></div>
-  <div class="row"><b>Full settings</b><span class="dim">coming in Phase 3 — edit config.json for now</span></div>
-  <div class="row" id="errrow" hidden><b>Last error</b><span id="errtxt" class="err"></span></div>
-  <div class="row"><b>Quit Blip</b><span><button class="minbtn" id="quitbtn">Quit</button></span></div>
+  <div class="layer card" id="panelLayer">
+    <header>
+      <span class="label">top matches</span>
+      <div class="hbtns">
+        <button class="btn" id="openall" title="Open all in browser">open all</button>
+        <button class="btn" id="minbtn" title="Back to pill">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+          minimize
+        </button>
+      </div>
+    </header>
+    <div id="jobs"></div>
+    <footer id="stats"></footer>
+  </div>
+
+  <div class="layer card" id="setLayer">
+    <header>
+      <span class="label">blip</span>
+      <button class="btn" id="setclose">close</button>
+    </header>
+    <div class="row"><span class="rlabel">scan now</span><button class="btn accent" id="scannow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"></path></svg>scan</button></div>
+    <div class="row"><span class="rlabel">pause / resume</span><button class="btn" id="pausebtn"></button></div>
+    <div class="row"><span class="rlabel">cycle</span><span class="rval" id="cycletxt">every 30 min</span></div>
+    <div class="row"><span class="rlabel">full settings</span><span class="rval">phase 3 · config.json for now</span></div>
+    <div class="row" id="errrow" hidden><span class="rlabel">last error</span><span class="rval err" id="errtxt"></span></div>
+    <div class="row"><span class="rlabel">quit blip</span><button class="btn danger" id="quitbtn">quit</button></div>
+  </div>
+
 </div>
 
 <script src="main.js"></script>

@@ -13,8 +13,8 @@
       {
         "label": "main",
         "title": "Blip",
-        "width": 230,
-        "height": 52,
+        "width": 430,
+        "height": 540,
         "resizable": false,
         "decorations": false,
         "transparent": true,
