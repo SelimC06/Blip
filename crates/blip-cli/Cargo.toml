@@ -1,0 +1,12 @@
+[package]
+name = "blip-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "blip"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+blip-core = { path = "../blip-core" }

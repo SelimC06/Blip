@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/blip-core", "crates/blip-cli"]
+resolver = "2"

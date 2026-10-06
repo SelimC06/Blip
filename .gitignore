@@ -1,0 +1,8 @@
+# Rust build artifacts (huge, fully regenerable)
+/target/
+
+# Local dev databases, if one ever gets created in-repo via --db
+*.db
+
+# macOS noise
+.DS_Store
