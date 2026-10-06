@@ -54,7 +54,7 @@
       <button role="tab" data-tab="log">log</button>
     </div>
 
-    <div class="panes" id="panes">
+    <div class="panes" id="panes" data-active="profile">
     <section class="pane" data-pane="profile">
       <div class="field">
         <div class="fhead"><span class="flabel">resume</span><button class="btn" id="pickresume">choose…</button></div>
@@ -175,6 +175,10 @@
         <span class="flabel">last 7 days as CSV</span>
         <button class="btn" id="exportweek">export…</button>
       </div>
+      <div class="field frow">
+        <span class="flabel">first-run setup</span>
+        <button class="btn" id="rerunsetup">run again</button>
+      </div>
       <div class="field">
         <span class="flabel">sources</span>
         <div class="sources" id="sources"></div>
@@ -185,6 +189,92 @@
     <footer class="setfoot">
       <span id="savedtxt"></span>
       <button class="btn danger" id="quitbtn">quit blip</button>
+    </footer>
+  </div>
+
+  <!-- First-run setup: five steps, same slide + morph as settings tabs. -->
+  <div class="layer card" id="setupLayer">
+    <header>
+      <span class="label">set up blip</span>
+      <div class="stepdots" id="stepdots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </header>
+
+    <div class="panes" id="setupPanes" data-active="s-welcome">
+      <section class="pane" data-pane="s-welcome">
+        <div class="field">
+          <p class="lead">Blip watches job boards for internships and co-ops that fit your resume, and shows you the best five.</p>
+          <p class="fhint">Everything runs on this computer. Setup takes a few minutes, mostly one download.</p>
+        </div>
+        <div class="field">
+          <ol class="plan">
+            <li><b>Ollama</b><span>runs the AI model on your Mac</span></li>
+            <li><b>Two models</b><span>one reads postings, one matches them to you</span></li>
+            <li><b>Your resume</b><span>PDF, text, or Markdown</span></li>
+            <li><b>What you want</b><span>roles, season, how recent</span></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="s-ollama" hidden>
+        <div class="field">
+          <div class="state" id="ollamastate"><i></i><span>Checking for Ollama…</span></div>
+          <p class="fhint" id="ollamahint"></p>
+          <div class="hbtns">
+            <button class="btn accent" id="getollama" hidden>download ollama ↗</button>
+            <button class="btn accent" id="startollama" hidden>start ollama</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="s-models" hidden>
+        <div class="field">
+          <div class="models" id="modellist"></div>
+        </div>
+        <div class="field" id="pullfield">
+          <div class="progress" id="pullbar" hidden><i></i></div>
+          <p class="fhint" id="pullhint"></p>
+          <div class="hbtns"><button class="btn accent" id="pullbtn">download</button></div>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="s-resume" hidden>
+        <div class="field">
+          <div class="fhead"><span class="flabel">resume</span><button class="btn accent" id="setupresume">choose…</button></div>
+          <div class="fval" id="setupresumename">Pick the resume you'd send with an application.</div>
+          <p class="fhint" id="setupresumehint">Blip reads it once to learn your skills, projects, and graduation date. It never leaves this computer.</p>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="s-prefs" hidden>
+        <div class="field">
+          <label class="flabel" for="s_lookingfor">what you're looking for</label>
+          <textarea id="s_lookingfor" rows="2" spellcheck="false" placeholder="e.g. ML or backend internships, systems-heavy teams"></textarea>
+        </div>
+        <div class="field">
+          <span class="flabel">role types</span>
+          <div class="chips" id="s_roletypes">
+            <button data-v="internship">internship</button>
+            <button data-v="co-op">co-op</button>
+            <button data-v="new-grad">new grad</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="fhead"><label class="flabel" for="s_season">season</label></div>
+          <input id="s_season" type="text" spellcheck="false">
+        </div>
+        <div class="field">
+          <span class="flabel">only roles posted in the last</span>
+          <div class="seg" id="s_maxage">
+            <button data-v="3">3 days</button><button data-v="7">7 days</button><button data-v="14">14 days</button><button data-v="30">30 days</button>
+          </div>
+          <p class="fhint bad" id="setuperr"></p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="setfoot">
+      <button class="btn" id="sback">later</button>
+      <button class="btn accent" id="snext">get started</button>
     </footer>
   </div>
 

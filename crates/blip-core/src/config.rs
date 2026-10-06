@@ -35,6 +35,8 @@ pub struct Config {
     pub prefilter_top: usize,
     /// Never surface a match below this score; an empty panel beats noise.
     pub min_score: u8,
+    /// First-run setup finished (or skipped by an existing install).
+    pub setup_done: bool,
     /// "ollama" (default, local) or "anthropic" (API key required).
     pub backend: String,
     pub ollama_url: String,
@@ -49,7 +51,7 @@ impl Default for Config {
             resume_path: String::new(),
             looking_for: "Software engineering internships and co-ops".into(),
             role_types: vec!["internship".into(), "co-op".into()],
-            season: "Summer 2027".into(),
+            season: default_season(),
             max_age_days: 7.0,
             exclude_advanced_degree: true,
             cycle_minutes: 30,
@@ -61,6 +63,7 @@ impl Default for Config {
             battery_pause_below: 20,
             prefilter_top: 20,
             min_score: 60,
+            setup_done: false,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),
@@ -70,7 +73,22 @@ impl Default for Config {
     }
 }
 
+/// The summer internship season people are recruiting for right now:
+/// from August on, that's next summer.
+pub fn default_season() -> String {
+    use chrono::Datelike;
+    let today = chrono::Local::now().date_naive();
+    let year = if today.month() >= 8 { today.year() + 1 } else { today.year() };
+    format!("Summer {year}")
+}
+
 impl Config {
+    /// A fresh install: setup never finished and no resume chosen. Installs
+    /// from before setup existed already have a resume, so they skip it.
+    pub fn needs_setup(&self) -> bool {
+        !self.setup_done && self.resume_path.trim().is_empty()
+    }
+
     pub fn applied_log_path(&self) -> PathBuf {
         if self.applied_log_path.trim().is_empty() {
             dirs::document_dir()

@@ -5,7 +5,7 @@ const { listen } = window.__TAURI__.event;
 
 const el = (id) => document.getElementById(id);
 const surface = el("surface");
-const LAYERS = { pill: el("pillLayer"), panel: el("panelLayer"), settings: el("setLayer") };
+const LAYERS = { pill: el("pillLayer"), panel: el("panelLayer"), settings: el("setLayer"), setup: el("setupLayer") };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -20,7 +20,7 @@ const ICONS = {
   cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
 };
 
-const LABELS = { rest: "Resting", scanning: "Scanning", complete: "Complete", paused: "Paused", error: "Error" };
+const LABELS = { rest: "Resting", scanning: "Scanning", complete: "Complete", paused: "Paused", error: "Error", setup: "Set up" };
 
 let state = { status: "rest", results: [], stats: {}, cycle_minutes: 30, message: "" };
 let view = "pill";
@@ -134,11 +134,11 @@ function targetDims(v) {
   const layer = LAYERS[v];
   // Layers are always laid out (just invisible), so this measures for real.
   let h = layer.offsetHeight;
-  if (v === "settings") {
-    // The layer may be stretched to the surface; use the visible pane's own
-    // height instead of whatever the pane area currently happens to be.
-    const panes = el("panes");
-    const pane = panes.querySelector(`.pane[data-pane="${activeTab}"]`);
+  const panes = layer.querySelector(":scope > .panes");
+  if (panes) {
+    // The layer may be stretched to the surface; use the active section's
+    // own height instead of whatever the section area currently happens to be.
+    const pane = panes.querySelector(`:scope > .pane[data-pane="${panes.dataset.active}"]`);
     h = h - panes.offsetHeight + pane.offsetHeight;
   }
   return { w: layer.offsetWidth + 2, h: Math.min(h, 470) + 2, r: CARD_RADIUS };
@@ -159,7 +159,7 @@ async function setView(next) {
 
   // Un-stretch before leaving settings: the surface is at the card's natural
   // height at this point, so nothing visibly moves.
-  if (prev === "settings") LAYERS.settings.classList.remove("stretch");
+  LAYERS[prev].classList.remove("stretch");
 
   const to = targetDims(next);
   const opening = next !== "pill";
@@ -185,7 +185,7 @@ async function setView(next) {
   }
   if (my !== seq) return;
   reportHitRect(to);
-  if (next === "settings") LAYERS.settings.classList.add("stretch");
+  if (next === "settings" || next === "setup") LAYERS[next].classList.add("stretch");
 }
 
 // Card resizes in place (tab switch, row dismissed): a firm spring with a
@@ -195,6 +195,7 @@ async function refit() {
   if (view === "pill") return;
   const to = targetDims(view);
   const now = currentDims();
+  if (!morphAnim && Math.abs(to.w - now.w) < 1 && Math.abs(to.h - now.h) < 1) return;
   reportHitRect({ w: Math.max(now.w, to.w), h: Math.max(now.h, to.h) });
   const landedOn = view;
   await morph(to, SPRING_FIT);
@@ -350,6 +351,8 @@ LAYERS.pill.addEventListener("click", (e) => {
   if (state.status === "scanning") {
     invoke("cancel_scan").catch(() => {});
     el("pilltext").textContent = "Stopping";
+  } else if (state.status === "setup") {
+    openSetup();
   } else if (state.status === "error") {
     openSettingsFor(state.message);
   } else if (state.status === "complete" && state.results.length) setView("panel");
@@ -498,7 +501,6 @@ function flashSaved(text, bad = false) {
 }
 
 const TAB_ORDER = ["profile", "search", "cycle", "model", "log"];
-const paneFor = (t) => document.querySelector(`.pane[data-pane="${t}"]`);
 
 function moveTabIndicator(instant = false) {
   const btn = el("tabs").querySelector(`button[data-tab="${activeTab}"]`);
@@ -507,6 +509,42 @@ function moveTabIndicator(instant = false) {
   ind.style.width = `${btn.offsetWidth}px`;
   ind.style.transform = `translateX(${btn.offsetLeft}px)`;
   if (instant) requestAnimationFrame(() => ind.classList.remove("instant"));
+}
+
+// Slide between two sections of one card (settings tabs, setup steps).
+// The outgoing section floats out of the flow and fades over the incoming
+// one, so the card's height can spring to the new section underneath.
+function slidePanes(container, from, to, dir) {
+  const pane = (name) => container.querySelector(`:scope > .pane[data-pane="${name}"]`);
+  container.dataset.active = to;
+  // Settle any half-finished switch from a fast double click.
+  for (const p of container.querySelectorAll(":scope > .pane")) {
+    p.getAnimations().forEach((a) => a.cancel());
+    p.style.position = "";
+    p.hidden = p.dataset.pane !== from;
+  }
+  const out = pane(from);
+  const inn = pane(to);
+  if (reduceMotion || out === inn) {
+    out.hidden = out !== inn;
+    inn.hidden = false;
+    return;
+  }
+  Object.assign(out.style, { position: "absolute", top: "0", left: "0", right: "0" });
+  out.animate(
+    [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-dir * 14}px)` }],
+    { duration: 150, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }
+  ).finished.then(() => {
+    if (container.dataset.active !== from) out.hidden = true;
+    out.style.position = "";
+    out.getAnimations().forEach((a) => a.cancel());
+  }, () => {});
+  inn.hidden = false;
+  inn.animate(
+    [{ opacity: 0, transform: `translateX(${dir * 18}px)`, filter: "blur(2px)" },
+     { opacity: 1, transform: "none", filter: "blur(0)" }],
+    { duration: 300, delay: 70, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }
+  );
 }
 
 function showTab(tab) {
@@ -520,37 +558,7 @@ function showTab(tab) {
     b.setAttribute("aria-selected", b.dataset.tab === tab);
   }
   moveTabIndicator();
-
-  // Settle any half-finished switch from a fast double click.
-  for (const p of document.querySelectorAll(".pane")) {
-    p.getAnimations().forEach((a) => a.cancel());
-    p.style.position = "";
-    p.hidden = p.dataset.pane !== prevTab;
-  }
-
-  const out = paneFor(prevTab);
-  const inn = paneFor(tab);
-  if (!reduceMotion) {
-    // Outgoing pane floats out of the flow so it can fade over the incoming one.
-    Object.assign(out.style, { position: "absolute", top: "0", left: "0", right: "0" });
-    out.animate(
-      [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-dir * 14}px)` }],
-      { duration: 150, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }
-    ).finished.then(() => {
-      if (activeTab !== prevTab) out.hidden = true;
-      out.style.position = "";
-      out.getAnimations().forEach((a) => a.cancel());
-    }, () => {});
-    inn.hidden = false;
-    inn.animate(
-      [{ opacity: 0, transform: `translateX(${dir * 18}px)`, filter: "blur(2px)" },
-       { opacity: 1, transform: "none", filter: "blur(0)" }],
-      { duration: 300, delay: 70, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }
-    );
-  } else {
-    out.hidden = true;
-    inn.hidden = false;
-  }
+  slidePanes(el("panes"), prevTab, tab, dir);
 
   if (tab === "model") refreshModels();
   refit();
@@ -686,14 +694,292 @@ el("picklog").addEventListener("click", async () => {
 });
 el("openlog").addEventListener("click", () => invoke("open_applied_log").catch((err) => flashSaved(String(err), true)));
 
+// ---------- first-run setup ----------
+
+const STEPS = ["s-welcome", "s-ollama", "s-models", "s-resume", "s-prefs"];
+let step = 0;
+let setupInfo = null; // { ollama, models: [{ name, purpose, size, installed }], resume_path }
+let setupPoll = null;
+let pulling = false;
+let pullError = "";
+let resumeBusy = false;
+let resumeMsg = null; // { text, kind } shown under the resume picker
+let setupPrefs = null; // full config, edited by the last step
+
+const fmtBytes = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`;
+
+async function openSetup() {
+  const panes = el("setupPanes");
+  const from = panes.dataset.active;
+  step = 0;
+  pullError = "";
+  slidePanes(panes, from, STEPS[0], -1);
+  enterStep();
+  renderSetup();
+  await setView("setup");
+}
+
+function leaveSetup() {
+  clearInterval(setupPoll);
+  setupPoll = null;
+}
+
+function goStep(n) {
+  const from = STEPS[step];
+  const dir = n > step ? 1 : -1;
+  step = n;
+  slidePanes(el("setupPanes"), from, STEPS[n], dir);
+  enterStep();
+  renderSetup();
+  refit();
+}
+
+// Each step fetches what it needs; the Ollama step keeps checking so that
+// installing or opening Ollama elsewhere is picked up on its own.
+async function enterStep() {
+  clearInterval(setupPoll);
+  setupPoll = null;
+  const name = STEPS[step];
+  if (name === "s-ollama") {
+    setupPoll = setInterval(refreshSetup, 2500);
+  }
+  if (name === "s-ollama" || name === "s-models" || name === "s-resume") {
+    await refreshSetup();
+  }
+  if (name === "s-prefs") {
+    try {
+      setupPrefs = (await invoke("get_settings")).config;
+    } catch (_) {
+      return;
+    }
+    el("s_lookingfor").value = setupPrefs.looking_for;
+    el("s_season").value = setupPrefs.season;
+    if (![3, 7, 14, 30].includes(setupPrefs.max_age_days)) setupPrefs.max_age_days = 7;
+    renderSetup();
+    refit();
+  }
+}
+
+async function refreshSetup() {
+  try {
+    setupInfo = await invoke("setup_status");
+  } catch (_) {
+    return;
+  }
+  // Ollama came up while waiting on its step: stop checking; continue unlocks.
+  if (STEPS[step] === "s-ollama" && setupInfo.ollama === "running" && setupPoll) {
+    clearInterval(setupPoll);
+    setupPoll = null;
+  }
+  renderSetup();
+  refit();
+}
+
+function setState(id, kind, text) {
+  const s = el(id);
+  s.className = `state ${kind}`;
+  s.querySelector("span").textContent = text;
+}
+
+function renderSetup() {
+  const dots = el("stepdots").children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].className = i === step ? "on" : i < step ? "done" : "";
+  }
+
+  const info = setupInfo;
+  const modelsReady = !!info && info.models.every((m) => m.installed);
+  const resumeReady = !resumeBusy && !!info && !!info.resume_path && resumeMsg?.kind !== "bad";
+
+  // Ollama step.
+  const hint = el("ollamahint");
+  el("getollama").hidden = true;
+  el("startollama").hidden = true;
+  if (!info) {
+    setState("ollamastate", "checking", "Checking for Ollama…");
+    hint.textContent = "";
+  } else if (info.ollama === "running") {
+    setState("ollamastate", "ok", "Ollama is running.");
+    hint.textContent = "";
+  } else if (info.ollama === "installed") {
+    setState("ollamastate", "warn", "Ollama is installed but not running.");
+    hint.textContent = "Start it here, or open Ollama from your Applications folder.";
+    el("startollama").hidden = false;
+  } else {
+    setState("ollamastate", "bad", "Ollama isn't installed.");
+    hint.textContent = "It's free. Download it, run the installer, then come back. Blip checks again every few seconds.";
+    el("getollama").hidden = false;
+  }
+
+  // Models step.
+  const list = el("modellist");
+  list.textContent = "";
+  for (const m of info?.models || []) {
+    const row = document.createElement("div");
+    row.className = "model";
+    const name = document.createElement("b");
+    name.textContent = m.name;
+    const st = document.createElement("span");
+    st.className = m.installed ? "st ok" : "st";
+    st.textContent = m.installed ? "✓ ready" : m.size ? `needs ${m.size}` : "needs download";
+    const why = document.createElement("span");
+    why.className = "why";
+    why.textContent = m.purpose;
+    row.append(name, st, why);
+    list.appendChild(row);
+  }
+  el("pullbtn").hidden = modelsReady || pulling;
+  el("pullbar").hidden = !pulling;
+  const ph = el("pullhint");
+  if (pullError) {
+    ph.textContent = pullError;
+    ph.className = "fhint bad";
+  } else if (modelsReady) {
+    ph.textContent = "Both models are ready.";
+    ph.className = "fhint ok";
+  } else if (!pulling) {
+    ph.textContent = "One-time download. You can keep using your computer while it runs.";
+    ph.className = "fhint";
+  }
+
+  // Resume step.
+  if (info?.resume_path && !resumeBusy) el("setupresumename").textContent = basename(info.resume_path);
+  const rh = el("setupresumehint");
+  if (resumeMsg) {
+    rh.textContent = resumeMsg.text;
+    rh.className = `fhint ${resumeMsg.kind || ""}`;
+  }
+  el("setupresume").disabled = resumeBusy;
+  el("setupresume").textContent = info?.resume_path ? "change…" : "choose…";
+
+  // Preferences step.
+  if (setupPrefs) {
+    for (const b of el("s_roletypes").children) b.classList.toggle("on", setupPrefs.role_types.includes(b.dataset.v));
+    setSeg("s_maxage", setupPrefs.max_age_days);
+  }
+
+  // Footer.
+  el("sback").textContent = step === 0 ? "later" : "back";
+  const next = el("snext");
+  next.textContent = step === 0 ? "get started" : step === STEPS.length - 1 ? "start scanning" : "continue";
+  const name = STEPS[step];
+  next.disabled =
+    (name === "s-ollama" && info?.ollama !== "running") ||
+    (name === "s-models" && (!modelsReady || pulling)) ||
+    (name === "s-resume" && !resumeReady) ||
+    (name === "s-prefs" && (!setupPrefs || !setupPrefs.role_types.length));
+}
+
+el("sback").addEventListener("click", () => {
+  if (step === 0) {
+    leaveSetup();
+    setView("pill");
+  } else goStep(step - 1);
+});
+
+el("snext").addEventListener("click", async () => {
+  if (step < STEPS.length - 1) return goStep(step + 1);
+  setupPrefs.looking_for = el("s_lookingfor").value.trim() || setupPrefs.looking_for;
+  setupPrefs.season = el("s_season").value.trim() || setupPrefs.season;
+  try {
+    await invoke("finish_setup", { cfg: setupPrefs });
+    el("setuperr").textContent = "";
+    leaveSetup();
+    setView("pill");
+  } catch (err) {
+    el("setuperr").textContent = `Couldn't save: ${err}`;
+    refit();
+  }
+});
+
+el("getollama").addEventListener("click", () => invoke("open_link", { url: "https://ollama.com/download" }).catch(() => {}));
+el("startollama").addEventListener("click", async () => {
+  try {
+    await invoke("start_ollama");
+    setState("ollamastate", "checking", "Starting Ollama…");
+    el("startollama").hidden = true;
+  } catch (err) {
+    el("ollamahint").textContent = String(err);
+  }
+});
+
+el("pullbtn").addEventListener("click", async () => {
+  pulling = true;
+  pullError = "";
+  el("pullbar").firstElementChild.style.width = "0%";
+  el("pullhint").textContent = "Starting download…";
+  el("pullhint").className = "fhint";
+  renderSetup();
+  refit();
+  try {
+    await invoke("pull_models");
+  } catch (err) {
+    pullError = String(err);
+  }
+  pulling = false;
+  await refreshSetup();
+});
+
+listen("setup-pull", (e) => {
+  const p = e.payload;
+  const pct = p.total ? Math.min(100, (p.completed / p.total) * 100) : 0;
+  el("pullbar").firstElementChild.style.width = `${pct.toFixed(1)}%`;
+  const which = p.count > 1 ? ` (${p.index} of ${p.count})` : "";
+  el("pullhint").className = "fhint";
+  el("pullhint").textContent = p.total
+    ? `Downloading ${p.model}${which} · ${fmtBytes(p.completed)} of ${fmtBytes(p.total)}`
+    : `${p.model}${which}: ${p.status || "preparing"}…`;
+});
+
+el("setupresume").addEventListener("click", async () => {
+  try {
+    const picked = await invoke("pick_resume");
+    if (picked === null) return;
+    resumeBusy = true;
+    el("setupresumename").textContent = basename(picked);
+    resumeMsg = { text: "Reading your resume… about 10 seconds.", kind: "" };
+    renderSetup();
+    refit();
+    const summary = await invoke("rebuild_profile");
+    resumeMsg = { text: summary ? `Got it: ${summary}` : "Got it.", kind: "ok" };
+  } catch (err) {
+    resumeMsg = { text: String(err), kind: "bad" };
+  } finally {
+    resumeBusy = false;
+    await refreshSetup();
+  }
+});
+
+el("s_roletypes").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || !setupPrefs) return;
+  const v = b.dataset.v;
+  setupPrefs.role_types = setupPrefs.role_types.includes(v)
+    ? setupPrefs.role_types.filter((x) => x !== v)
+    : [...setupPrefs.role_types, v];
+  renderSetup();
+});
+el("s_maxage").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || !setupPrefs) return;
+  setupPrefs.max_age_days = Number(b.dataset.v);
+  renderSetup();
+});
+el("rerunsetup").addEventListener("click", () => openSetup());
+
 // ---------- state sync ----------
+
+let setupAutoOpened = false;
 
 function onState(next) {
   const wasStatus = lastStatus;
   state = next;
   lastStatus = state.status;
   render();
-  if (state.status === "complete" && wasStatus === "scanning" && state.results.length && view === "pill") {
+  if (state.status === "setup" && !setupAutoOpened && view === "pill") {
+    setupAutoOpened = true; // a fresh install greets you once; after "later" the pill waits
+    openSetup();
+  } else if (state.status === "complete" && wasStatus === "scanning" && state.results.length && view === "pill") {
     setView("panel"); // fresh results: open up (but never yank away settings mid-edit)
   } else if (state.status === "scanning" && view === "panel") {
     setView("pill"); // a new scan folds the old results away

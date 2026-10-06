@@ -1,6 +1,8 @@
 //! Blip pill app: a frameless always-on-top window whose Rust side runs the
 //! blip-core pipeline on a schedule and feeds state to the HTML pill UI.
 
+mod setup;
+
 use blip_core::model::{Cancelled, SourceStatus};
 use blip_core::score::{self, Scored};
 use blip_core::store::{default_db_path, Store};
@@ -563,10 +565,11 @@ fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
         let cfg = config::load_or_create().unwrap_or_default();
         // Manual scans run even while paused, off-hours, or on low battery;
         // automatic ones respect all three.
+        // Until first-run setup is done there's nothing to score against.
         let allowed = manual || {
             let paused = shared.ui.lock().unwrap().paused;
             let in_hours = cfg.is_active_hour(chrono::Local::now().hour() as u8);
-            !paused && in_hours && !battery_low(cfg.battery_pause_below)
+            !cfg.needs_setup() && !paused && in_hours && !battery_low(cfg.battery_pause_below)
         };
         if allowed {
             run_cycle(&app, &shared);
@@ -588,10 +591,11 @@ fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
 
 pub fn run() {
     let (tx, rx) = mpsc::channel::<()>();
+    let cfg = config::load_or_create().unwrap_or_default();
     let shared = Arc::new(Shared {
         ui: Mutex::new(UiState {
-            status: "rest".into(),
-            cycle_minutes: 30,
+            status: if cfg.needs_setup() { "setup" } else { "rest" }.into(),
+            cycle_minutes: cfg.cycle_minutes,
             ..Default::default()
         }),
         scan_now: tx,
@@ -612,6 +616,10 @@ pub fn run() {
         ))
         .manage(shared)
         .invoke_handler(tauri::generate_handler![
+            setup::setup_status,
+            setup::start_ollama,
+            setup::pull_models,
+            setup::finish_setup,
             get_state,
             scan_now,
             cancel_scan,

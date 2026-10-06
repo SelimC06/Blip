@@ -43,7 +43,7 @@ svg { display: block; flex: none; }
   overflow: hidden;
   transition: border-color .32s ease, box-shadow .38s ease;
 }
-#surface[data-view="panel"], #surface[data-view="settings"] {
+#surface[data-view="panel"], #surface[data-view="settings"], #surface[data-view="setup"] {
   border-color: var(--line);
   box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
 }
@@ -82,6 +82,8 @@ svg { display: block; flex: none; }
 #surface[data-status="complete"] .sdot { background: var(--phosphor); box-shadow: 0 0 6px 1px rgba(237, 230, 214, .5); }
 #surface[data-status="paused"] .sdot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dim); }
 #surface[data-status="error"] .sdot { background: var(--red); box-shadow: 0 0 6px 1px rgba(248, 113, 113, .5); }
+/* Waiting for first-run setup: an open ring in the bright color, "come finish me". */
+#surface[data-status="setup"] .sdot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--phosphor); }
 @keyframes ping { from { transform: scale(.45); opacity: 1 } to { transform: scale(1.6); opacity: 0 } }
 
 .gear {
@@ -98,7 +100,7 @@ svg { display: block; flex: none; }
 /* ---------- cards (results + settings) ---------- */
 .card { display: flex; flex-direction: column; }
 #panelLayer { width: 378px; max-height: 470px; }
-#setLayer { width: 360px; }
+#setLayer, #setupLayer { width: 360px; }
 
 /* Shared horizontal rhythm: 14px left edge, 12px right edge, for every
    header, row and footer, so labels and buttons line up down the card. */
@@ -221,7 +223,7 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 
 /* While settings are open the layer stretches to the surface, so the footer
    rides the animated bottom edge; the pane area clips/reveals in between. */
-#setLayer.stretch { bottom: 0; }
+#setLayer.stretch, #setupLayer.stretch { bottom: 0; }
 .panes { position: relative; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 
 /* Source health: two compact columns of status dots. */
@@ -232,6 +234,46 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 .src.bad { color: var(--red); }
 .src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .src b { font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* ---------- first-run setup ---------- */
+.stepdots { display: flex; gap: 5px; align-items: center; }
+.stepdots i {
+  width: 14px; height: 3px; border-radius: 2px; background: var(--line);
+  transition: background .3s, width .35s cubic-bezier(.34, 1.25, .44, 1);
+}
+.stepdots i.done { background: var(--dim); }
+.stepdots i.on { background: var(--phosphor); width: 22px; }
+
+.lead { font-family: var(--read); font-size: 13.5px; line-height: 1.45; color: var(--phosphor); }
+.plan { list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; counter-reset: plan; }
+.plan li { display: grid; grid-template-columns: 18px 1fr; column-gap: 8px; counter-increment: plan; }
+.plan li::before {
+  content: counter(plan); grid-row: span 2; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 9.5px; font-weight: 600;
+  color: var(--dim); border: 1px solid var(--line);
+}
+.plan b { font-weight: 500; color: var(--phosphor); line-height: 18px; }
+.plan span { color: var(--dim); font-family: var(--read); font-size: 11px; }
+
+/* One-line status with a dot: checking / ok / needs action / failed. */
+.state { display: flex; align-items: center; gap: 9px; font-family: var(--read); font-size: 12.5px; color: var(--phosphor); }
+.state i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dim); }
+.state.checking i { animation: breathe 1.2s ease-in-out infinite; }
+.state.ok i { background: var(--phosphor); box-shadow: 0 0 6px 1px rgba(237, 230, 214, .5); }
+.state.warn i { background: var(--amber); box-shadow: 0 0 6px 1px rgba(251, 191, 36, .45); }
+.state.bad i { background: var(--red); }
+@keyframes breathe { 50% { opacity: .3; } }
+
+.models { display: grid; gap: 8px; }
+.model { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: baseline; }
+.model b { font-weight: 500; color: var(--phosphor); }
+.model .sz { color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.model .why { grid-column: 1 / -1; color: var(--dim); font-family: var(--read); font-size: 11px; }
+.model .st { font-size: 10px; color: var(--amber); }
+.model .st.ok { color: var(--phosphor); }
+
+.progress { height: 6px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--phosphor); border-radius: 999px; transition: width .25s ease-out; }
 
 /* Deadline flag in result rows. */
 .jclose { color: var(--amber); font-size: 10px; line-height: 14px; margin-top: 4px; }
@@ -301,5 +343,6 @@ select {
 
 @media (prefers-reduced-motion: reduce) {
   #surface[data-status="scanning"] .sdot::after { animation: none; }
-  .seg-ind { transition: none; }
+  .seg-ind, .stepdots i, .progress i { transition: none; }
+  .state.checking i { animation: none; }
 }
