@@ -44,6 +44,7 @@
       </div>
     </header>
 
+    <div class="errbanner" id="errbanner" role="alert" hidden></div>
     <div class="seg tabs" id="tabs" role="tablist">
       <span class="seg-ind" id="tabind" aria-hidden="true"></span>
       <button role="tab" data-tab="profile" class="on">profile</button>
@@ -168,7 +169,7 @@
           <div class="hbtns"><button class="btn" id="picklog">choose…</button><button class="btn" id="openlog">open</button></div>
         </div>
         <div class="fval mono" id="logpath"></div>
-        <div class="fhint">✓ adds a row to this spreadsheet. ✕ never does. Your own columns and edits are kept.</div>
+        <div class="fhint">✓ adds a row to this spreadsheet. ✕ never does. Your own columns and edits are kept. If the file is open in Excel, Blip waits until you close it.</div>
       </div>
       <div class="field frow">
         <span class="flabel">last 7 days as CSV</span>
@@ -177,10 +178,6 @@
       <div class="field">
         <span class="flabel">sources</span>
         <div class="sources" id="sources"></div>
-      </div>
-      <div class="field" id="errrow" hidden>
-        <span class="flabel">last error</span>
-        <div class="fval err" id="errtxt"></div>
       </div>
     </section>
     </div>

@@ -94,6 +94,7 @@ fn parse_html_rows(html: &str, season: &str, repo: &str) -> Vec<Posting> {
             season: season.to_string(),
             posted,
             description: String::new(),
+            deadline: String::new(),
         });
     }
     out

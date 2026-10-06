@@ -1,13 +1,11 @@
 //! Greenhouse public job-board JSON — official, unauthenticated, per company:
 //! https://boards-api.greenhouse.io/v1/boards/{board}/jobs
-//! Phase 3 moves this watchlist into user settings.
 
 use crate::model::Posting;
 use anyhow::Result;
 use regex::Regex;
 
-// Ramp/OpenAI/Notion use Ashby, not Greenhouse — an Ashby source is a
-// Phase 4 addition; this list moves to user settings in Phase 3.
+// Ramp/OpenAI/Notion use Ashby, not Greenhouse — see sources/ashby.rs.
 pub const WATCHLIST: &[(&str, &str)] = &[
     ("stripe", "Stripe"),
     ("datadog", "Datadog"),
@@ -58,8 +56,19 @@ pub fn fetch_board(
             url: job["absolute_url"].as_str().unwrap_or("").to_string(),
             source: format!("greenhouse:{board}"),
             season,
-            posted: job["updated_at"].as_str().unwrap_or("").to_string(),
+            // first_published is when the job went live; updated_at moves
+            // every time the company edits an old listing.
+            posted: job["first_published"]
+                .as_str()
+                .or_else(|| job["updated_at"].as_str())
+                .unwrap_or("")
+                .to_string(),
             description: String::new(),
+            deadline: job["application_deadline"]
+                .as_str()
+                .and_then(|d| d.get(..10))
+                .unwrap_or("")
+                .to_string(),
         });
     }
     Ok(out)

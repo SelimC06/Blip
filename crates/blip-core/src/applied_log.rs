@@ -2,7 +2,7 @@
 //! file is read and re-saved so rows, columns and edits the user added
 //! survive; SQLite stays the source of truth, this is a write-only mirror.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 pub struct AppliedRow {
@@ -17,9 +17,25 @@ pub struct AppliedRow {
 
 const HEADERS: [&str; 7] = ["Date applied", "Company", "Role", "Location", "Match", "Posted", "Link"];
 
+/// Excel keeps a `~$Name.xlsx` owner file next to any workbook it has open.
+/// On a Mac it doesn't lock the workbook itself, so writing would succeed and
+/// then be overwritten when the user saves in Excel. Refuse instead.
+pub fn open_in_excel(path: &Path) -> bool {
+    match (path.parent(), path.file_name()) {
+        (Some(dir), Some(name)) => dir.join(format!("~${}", name.to_string_lossy())).exists(),
+        _ => false,
+    }
+}
+
 pub fn append(path: &Path, row: &AppliedRow) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
+    }
+    if open_in_excel(path) {
+        bail!(
+            "{} is open in Excel. Close it, then press ✓ again.",
+            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        );
     }
     let is_new = !path.exists();
     let mut book = if is_new {
@@ -119,6 +135,13 @@ mod tests {
         assert_eq!(sheet.get_value((2, 4)), "Initech");
         assert_eq!(sheet.get_value((5, 4)), "91");
         assert_eq!(sheet.get_value((8, 2)), "Referral from Sam");
+
+        // With Excel's owner file present, the append is refused untouched.
+        std::fs::write(dir.join("~$Applied.xlsx"), b"").unwrap();
+        let err = append(&path, &row("Umbrella")).unwrap_err().to_string();
+        assert!(err.contains("open in Excel"), "{err}");
+        let book = umya_spreadsheet::reader::xlsx::read(&path).unwrap();
+        assert_eq!(book.get_sheet(&0).unwrap().get_highest_row(), 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

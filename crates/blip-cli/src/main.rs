@@ -80,11 +80,14 @@ fn cmd_scan(db_path: std::path::PathBuf, limit: usize, top: Option<usize>) -> Re
     // Phase 1: score everything not yet surfaced, print the top N.
     let llm = Llm::new(&cfg)?;
     let prof = profile::load_or_build(&llm, &cfg)?;
-    let candidates = store.unsurfaced()?;
+    let candidates = store.unsurfaced(&score::score_key(&cfg, &prof))?;
     let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, top_n, &|| false)?;
 
     if ranked.is_empty() {
-        println!("\nno candidates passed the filters (season {}, max age {} days)", cfg.season, cfg.max_age_days);
+        println!(
+            "\nno matches scoring {}+ (filters: season {}, max age {} days)",
+            cfg.min_score, cfg.season, cfg.max_age_days
+        );
         return Ok(());
     }
     println!("\nTOP {} MATCHES", ranked.len());

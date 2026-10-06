@@ -71,6 +71,7 @@ pub fn fetch_board(
             season,
             posted: job["publishedAt"].as_str().unwrap_or("").to_string(),
             description: job["descriptionPlain"].as_str().unwrap_or("").to_string(),
+            deadline: String::new(),
         });
     }
     Ok(out)

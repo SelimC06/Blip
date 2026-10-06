@@ -23,18 +23,29 @@ impl Llm {
         })
     }
 
+    /// POST to Ollama with errors a person can act on: not running, or the
+    /// model not downloaded yet (Ollama answers 404 for a missing model).
+    fn ollama_post(&self, path: &str, model: &str, body: Value) -> Result<Value> {
+        let resp = self
+            .client
+            .post(format!("{}{path}", self.cfg.ollama_url))
+            .json(&body)
+            .send()
+            .map_err(|_| {
+                anyhow!("Ollama isn't running. Install it from ollama.com and open it, then scan again.")
+            })?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            bail!("The model \"{model}\" isn't downloaded. In Terminal: ollama pull {model}");
+        }
+        Ok(resp.error_for_status()?.json()?)
+    }
+
     /// Embed a batch of texts via Ollama /api/embed.
     pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let mut out = Vec::with_capacity(texts.len());
         for chunk in texts.chunks(64) {
-            let resp: Value = self
-                .client
-                .post(format!("{}/api/embed", self.cfg.ollama_url))
-                .json(&json!({ "model": self.cfg.embed_model, "input": chunk }))
-                .send()
-                .context("Ollama unreachable — is `ollama serve` running?")?
-                .error_for_status()?
-                .json()?;
+            let model = &self.cfg.embed_model;
+            let resp = self.ollama_post("/api/embed", model, json!({ "model": model, "input": chunk }))?;
             let embs = resp["embeddings"]
                 .as_array()
                 .ok_or_else(|| anyhow!("no embeddings in Ollama response"))?;
@@ -60,11 +71,12 @@ impl Llm {
     }
 
     fn ollama_chat_json(&self, system: &str, user: &str) -> Result<Value> {
-        let resp: Value = self
-            .client
-            .post(format!("{}/api/chat", self.cfg.ollama_url))
-            .json(&json!({
-                "model": self.cfg.chat_model,
+        let model = &self.cfg.chat_model;
+        let resp = self.ollama_post(
+            "/api/chat",
+            model,
+            json!({
+                "model": model,
                 "stream": false,
                 "format": "json",
                 "options": { "temperature": 0 },
@@ -72,11 +84,8 @@ impl Llm {
                     { "role": "system", "content": system },
                     { "role": "user", "content": user }
                 ]
-            }))
-            .send()
-            .context("Ollama unreachable — is `ollama serve` running?")?
-            .error_for_status()?
-            .json()?;
+            }),
+        )?;
         let content = resp["message"]["content"]
             .as_str()
             .ok_or_else(|| anyhow!("no message content from Ollama"))?;

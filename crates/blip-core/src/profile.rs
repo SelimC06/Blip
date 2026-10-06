@@ -13,7 +13,13 @@ pub struct Profile {
     pub embedding: Vec<f32>,
     pub resume_path: String,
     pub resume_mtime: u64,
+    /// The "looking for" text the embedding was built with.
+    #[serde(default)]
+    pub looking_for: String,
 }
+
+pub const NO_RESUME: &str =
+    "No resume yet. Choose yours in Settings → Profile (CLI: blip profile --resume <file>).";
 
 pub fn profile_path() -> PathBuf {
     let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -38,10 +44,13 @@ pub fn extract_resume_text(path: &Path) -> Result<String> {
 }
 
 pub fn build(llm: &Llm, cfg: &Config) -> Result<Profile> {
-    if cfg.resume_path.is_empty() {
-        bail!("no resume configured — run: blip profile --resume /path/to/resume.pdf");
+    if cfg.resume_path.trim().is_empty() {
+        bail!(NO_RESUME);
     }
     let path = PathBuf::from(&cfg.resume_path);
+    if !path.exists() {
+        bail!("Your resume file moved or was deleted ({}). Choose it again in Settings → Profile.", path.display());
+    }
     let text = extract_resume_text(&path)?;
 
     let system = "You turn resumes into structured JSON for job matching. \
@@ -56,8 +65,22 @@ pub fn build(llm: &Llm, cfg: &Config) -> Result<Profile> {
          RESUME:\n{text}"
     );
     let data = llm.chat_json(system, &user)?;
+    let embedding = embed_profile(llm, &data, &cfg.looking_for)?;
 
-    // What the posting embeddings get compared against.
+    let profile = Profile {
+        data,
+        embedding,
+        resume_path: cfg.resume_path.clone(),
+        resume_mtime: mtime(&path),
+        looking_for: cfg.looking_for.clone(),
+    };
+    save(&profile)?;
+    Ok(profile)
+}
+
+/// What the posting embeddings get compared against: resume summary,
+/// skills, and the user's "looking for" text.
+fn embed_profile(llm: &Llm, data: &serde_json::Value, looking_for: &str) -> Result<Vec<f32>> {
     let embed_text = format!(
         "{} Skills: {}. Looking for: {}",
         data["summary"].as_str().unwrap_or(""),
@@ -65,33 +88,26 @@ pub fn build(llm: &Llm, cfg: &Config) -> Result<Profile> {
             .as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
             .unwrap_or_default(),
-        cfg.looking_for
+        looking_for
     );
-    let embedding = llm
-        .embed(&[embed_text])?
-        .into_iter()
-        .next()
-        .unwrap_or_default();
-
-    let profile = Profile {
-        data,
-        embedding,
-        resume_path: cfg.resume_path.clone(),
-        resume_mtime: mtime(&path),
-    };
-    save(&profile)?;
-    Ok(profile)
+    Ok(llm.embed(&[embed_text])?.into_iter().next().unwrap_or_default())
 }
 
 /// Cached profile if the resume file hasn't changed; rebuild otherwise.
+/// A changed "looking for" only re-embeds (one fast local call).
 pub fn load_or_build(llm: &Llm, cfg: &Config) -> Result<Profile> {
     let path = profile_path();
     if let Ok(raw) = std::fs::read_to_string(&path) {
-        if let Ok(p) = serde_json::from_str::<Profile>(&raw) {
+        if let Ok(mut p) = serde_json::from_str::<Profile>(&raw) {
             if p.resume_path == cfg.resume_path
                 && p.resume_mtime == mtime(Path::new(&cfg.resume_path))
                 && !p.embedding.is_empty()
             {
+                if p.looking_for != cfg.looking_for {
+                    p.embedding = embed_profile(llm, &p.data, &cfg.looking_for)?;
+                    p.looking_for = cfg.looking_for.clone();
+                    save(&p)?;
+                }
                 return Ok(p);
             }
         }

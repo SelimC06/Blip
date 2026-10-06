@@ -207,11 +207,15 @@ function render() {
   surface.dataset.status = state.status;
   el("pilltext").textContent = LABELS[state.status] || state.status;
   el("pausebtn").innerHTML = state.paused ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
-  LAYERS.pill.title = state.status === "scanning" ? "Click to stop this scan" : "";
+  LAYERS.pill.title = state.status === "scanning" ? "Click to stop this scan"
+    : state.status === "error" ? `${state.message}\nClick to fix it in Settings.` : "";
 
-  const hasErr = state.status === "error" && state.message;
-  el("errrow").hidden = !hasErr;
-  if (hasErr) el("errtxt").textContent = state.message;
+  const hasErr = state.status === "error" && !!state.message;
+  const banner = el("errbanner");
+  const wasShown = !banner.hidden;
+  banner.hidden = !hasErr;
+  banner.textContent = hasErr ? state.message : "";
+  if (wasShown !== hasErr) refit();
 
   renderJobs();
   renderStats();
@@ -230,7 +234,7 @@ function renderJobs() {
   }
   for (const j of state.results) {
     const row = document.createElement("div");
-    row.className = "job";
+    row.className = j.applied ? "job done" : "job";
 
     const score = document.createElement("span");
     score.className = j.score >= 90 ? "score hot" : "score";
@@ -346,9 +350,22 @@ LAYERS.pill.addEventListener("click", (e) => {
   if (state.status === "scanning") {
     invoke("cancel_scan").catch(() => {});
     el("pilltext").textContent = "Stopping";
+  } else if (state.status === "error") {
+    openSettingsFor(state.message);
   } else if (state.status === "complete" && state.results.length) setView("panel");
   else invoke("scan_now").catch(() => {});
 });
+// An error opens Settings on the tab where it gets fixed.
+async function openSettingsFor(message) {
+  const m = (message || "").toLowerCase();
+  const tab = m.includes("resume") ? "profile"
+    : m.includes("ollama") || m.includes("model") || m.includes("api key") || m.includes("scoring") ? "model"
+    : "log";
+  await loadSettings();
+  showTab(tab);
+  setView("settings");
+}
+
 el("gear").addEventListener("click", async (e) => {
   e.stopPropagation();
   await loadSettings(); // render the card before measuring it for the morph
@@ -453,10 +470,6 @@ function renderSettings() {
 
   el("logpath").textContent = settings.applied_log_resolved;
   el("openlog").disabled = !settings.applied_log_exists;
-
-  const hasErr = state.status === "error" && state.message;
-  el("errrow").hidden = !hasErr;
-  if (hasErr) el("errtxt").textContent = state.message;
 }
 
 // Every change saves itself shortly after; the footer confirms.

@@ -13,6 +13,9 @@ pub struct Posting {
     /// Plain-text job description when known (Ashby gives it up front;
     /// others are fetched at scoring time). Empty otherwise.
     pub description: String,
+    /// Application deadline (YYYY-MM-DD) when the source publishes one
+    /// (Greenhouse's application_deadline). Empty otherwise.
+    pub deadline: String,
 }
 
 impl Posting {
@@ -27,6 +30,39 @@ impl Posting {
             norm(&self.season)
         )
     }
+
+    /// Second dedupe key: the job's ID on its applicant-tracking system, read
+    /// from the URL. Catches one job listed by both the community list and the
+    /// company's own board under slightly different titles or locations.
+    pub fn job_key(&self) -> Option<String> {
+        job_key(&self.url)
+    }
+}
+
+pub fn job_key(url: &str) -> Option<String> {
+    use std::sync::LazyLock;
+    static GH: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?:[?&]gh_jid=|greenhouse\.io/[^/?#]+/jobs/)(\d{5,})").unwrap()
+    });
+    static ASHBY: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"ashbyhq\.com/[^/?#]+/([0-9a-fA-F-]{36})").unwrap()
+    });
+    static LEVER: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"lever\.co/[^/?#]+/([0-9a-fA-F-]{36})").unwrap()
+    });
+    if let Some(c) = GH.captures(url) {
+        return Some(format!("gh:{}", &c[1]));
+    }
+    if let Some(c) = ASHBY.captures(url) {
+        return Some(format!("ashby:{}", c[1].to_lowercase()));
+    }
+    LEVER.captures(url).map(|c| format!("lever:{}", c[1].to_lowercase()))
+}
+
+/// Case- and spacing-insensitive season comparison ("summer  2027" == "Summer 2027").
+pub fn same_season(a: &str, b: &str) -> bool {
+    let n = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    n(a) == n(b)
 }
 
 fn norm(s: &str) -> String {
@@ -65,3 +101,32 @@ impl std::fmt::Display for Cancelled {
 }
 
 impl std::error::Error for Cancelled {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn job_key_matches_across_url_styles() {
+        let simplify = "https://boards.greenhouse.io/cloudflare/jobs/8245211?utm_source=Simplify&ref=Simplify";
+        let board = "https://boards.greenhouse.io/cloudflare/jobs/8245211?gh_jid=8245211";
+        let custom = "https://careers.datadoghq.com/detail/8114161/?gh_jid=8114161";
+        let newer = "https://job-boards.greenhouse.io/gleanwork/jobs/4595665005?utm_source=Simplify";
+        assert_eq!(job_key(simplify).as_deref(), Some("gh:8245211"));
+        assert_eq!(job_key(board), job_key(simplify));
+        assert_eq!(job_key(custom).as_deref(), Some("gh:8114161"));
+        assert_eq!(job_key(newer).as_deref(), Some("gh:4595665005"));
+        assert_eq!(
+            job_key("https://jobs.ashbyhq.com/notion/E66C6658-9e65-4c58-8db2-844628b6e8f8").as_deref(),
+            Some("ashby:e66c6658-9e65-4c58-8db2-844628b6e8f8")
+        );
+        assert_eq!(job_key("https://example.com/careers/123"), None);
+    }
+
+    #[test]
+    fn seasons_compare_loosely() {
+        assert!(same_season("summer 2027", "Summer 2027"));
+        assert!(same_season(" Summer   2027 ", "Summer 2027"));
+        assert!(!same_season("Fall 2027", "Summer 2027"));
+    }
+}

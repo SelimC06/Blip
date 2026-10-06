@@ -6,10 +6,17 @@ use anyhow::Result;
 use std::path::Path;
 
 fn field(s: &str) -> String {
+    // Job titles come from third parties; a leading = + - @ would make Excel
+    // run the cell as a formula. A leading apostrophe keeps it as text.
+    let s = if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
+    } else {
+        s.to_string()
+    };
     if s.contains([',', '"', '\n', '\r']) {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s
     }
 }
 
@@ -54,5 +61,13 @@ mod tests {
         assert!(csv.contains("\"Acme, Inc.\""));
         assert!(csv.contains("\"Intern \"\"Platform\"\"\""));
         assert!(csv.contains(",92,"));
+    }
+
+    #[test]
+    fn neutralizes_formula_cells() {
+        assert_eq!(field("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"");
+        assert_eq!(field("+1 555"), "'+1 555");
+        assert_eq!(field("@SUM(A1)"), "'@SUM(A1)");
+        assert_eq!(field("Software Intern"), "Software Intern");
     }
 }

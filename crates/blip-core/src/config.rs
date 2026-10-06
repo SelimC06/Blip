@@ -33,6 +33,8 @@ pub struct Config {
     pub battery_pause_below: u8,
     /// How many embedding-prefiltered candidates the LLM deep-reads per cycle.
     pub prefilter_top: usize,
+    /// Never surface a match below this score; an empty panel beats noise.
+    pub min_score: u8,
     /// "ollama" (default, local) or "anthropic" (API key required).
     pub backend: String,
     pub ollama_url: String,
@@ -58,6 +60,7 @@ impl Default for Config {
             notify_threshold: 90,
             battery_pause_below: 20,
             prefilter_top: 20,
+            min_score: 60,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),

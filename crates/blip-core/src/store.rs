@@ -25,6 +25,9 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE postings ADD COLUMN surfaced_at TEXT",
     "ALTER TABLE postings ADD COLUMN applied_at TEXT",
     "ALTER TABLE postings ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE postings ADD COLUMN job_key TEXT",
+    "ALTER TABLE postings ADD COLUMN red_flags TEXT",
+    "ALTER TABLE postings ADD COLUMN score_key TEXT",
 ];
 
 #[derive(Debug, Clone)]
@@ -90,17 +93,85 @@ impl Store {
                 }
             }
         }
-        Ok(Store { conn })
+        conn.execute("CREATE INDEX IF NOT EXISTS postings_job_key ON postings(job_key)", [])?;
+        let store = Store { conn };
+        store.backfill_job_keys()?;
+        Ok(store)
+    }
+
+    /// Give rows saved before job keys existed their key, then retire the
+    /// second copy of any job stored twice: the copy you've already seen
+    /// (surfaced/applied/dismissed) wins, otherwise the earliest.
+    fn backfill_job_keys(&self) -> Result<()> {
+        let pending: Vec<(String, String)> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT fingerprint, url FROM postings WHERE job_key IS NULL")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        if pending.is_empty() {
+            return Ok(());
+        }
+        for (fp, url) in &pending {
+            // '' marks "no key" so the row isn't revisited on every open.
+            let key = crate::model::job_key(url).unwrap_or_default();
+            self.conn.execute(
+                "UPDATE postings SET job_key = ?2 WHERE fingerprint = ?1",
+                params![fp, key],
+            )?;
+        }
+        self.conn.execute(
+            "UPDATE postings SET status = 'duplicate'
+             WHERE status = 'new' AND job_key != '' AND fingerprint != (
+               SELECT keep.fingerprint FROM postings keep
+               WHERE keep.job_key = postings.job_key AND keep.status != 'duplicate'
+               ORDER BY (keep.status != 'new') DESC, keep.first_seen, keep.fingerprint
+               LIMIT 1)",
+            [],
+        )?;
+        Ok(())
     }
 
     /// Insert if never seen. Returns true when the posting is new.
+    ///
+    /// Known postings get their source-owned fields refreshed (posting date,
+    /// published deadline) so corrections from the source reach old rows.
+    /// A posting whose job key is already stored counts as seen.
     pub fn insert_if_new(&self, p: &Posting) -> Result<bool> {
-        let n = self.conn.execute(
-            "INSERT OR IGNORE INTO postings
-             (fingerprint, company, title, location, url, source, season, posted, description)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        let fp = p.fingerprint();
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM postings WHERE fingerprint = ?1)",
+            params![fp],
+            |r| r.get(0),
+        )?;
+        if exists {
+            self.conn.execute(
+                "UPDATE postings SET posted = ?2,
+                    deadline = CASE WHEN ?3 != '' THEN ?3 ELSE deadline END
+                 WHERE fingerprint = ?1",
+                params![fp, p.posted, p.deadline],
+            )?;
+            return Ok(false);
+        }
+        let key = p.job_key().unwrap_or_default();
+        if !key.is_empty() {
+            let dup: bool = self.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM postings WHERE job_key = ?1)",
+                params![key],
+                |r| r.get(0),
+            )?;
+            if dup {
+                return Ok(false);
+            }
+        }
+        self.conn.execute(
+            "INSERT INTO postings
+             (fingerprint, company, title, location, url, source, season, posted,
+              description, deadline, job_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULLIF(?10, ''), ?11)",
             params![
-                p.fingerprint(),
+                fp,
                 p.company,
                 p.title,
                 p.location,
@@ -108,10 +179,12 @@ impl Store {
                 p.source,
                 p.season,
                 p.posted,
-                p.description
+                p.description,
+                p.deadline,
+                key
             ],
         )?;
-        Ok(n == 1)
+        Ok(true)
     }
 
     pub fn log_cycle(&self, scanned: usize, new_count: usize, errors: &[String]) -> Result<()> {
@@ -123,13 +196,16 @@ impl Store {
     }
 
     /// Postings never yet shown to the user — the scoring pool each cycle.
-    pub fn unsurfaced(&self) -> Result<Vec<Posting>> {
+    /// Each comes with its cached score when one exists for this `score_key`
+    /// (same resume, same "looking for", same model), so it isn't re-scored.
+    pub fn unsurfaced(&self, score_key: &str) -> Result<Vec<(Posting, Option<Scored>)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT company, title, location, url, source, season, posted, description
+            "SELECT company, title, location, url, source, season, posted, description,
+                    COALESCE(deadline, ''), score, reason, red_flags, score_key
              FROM postings WHERE status = 'new'",
         )?;
         let rows = stmt.query_map([], |r| {
-            Ok(Posting {
+            let posting = Posting {
                 company: r.get(0)?,
                 title: r.get(1)?,
                 location: r.get(2)?,
@@ -138,7 +214,24 @@ impl Store {
                 season: r.get(5)?,
                 posted: r.get(6)?,
                 description: r.get(7)?,
-            })
+                deadline: r.get(8)?,
+            };
+            let score: Option<i64> = r.get(9)?;
+            let cached_key: Option<String> = r.get(12)?;
+            let cached = match (score, cached_key) {
+                (Some(score), Some(k)) if k == score_key => Some(Scored {
+                    score: score.clamp(0, 100) as u8,
+                    reason: r.get::<_, Option<String>>(10)?.unwrap_or_default(),
+                    red_flags: r
+                        .get::<_, Option<String>>(11)?
+                        .and_then(|j| serde_json::from_str(&j).ok())
+                        .unwrap_or_default(),
+                    deadline: (!posting.deadline.is_empty()).then(|| posting.deadline.clone()),
+                    posting: posting.clone(),
+                }),
+                _ => None,
+            };
+            Ok((posting, cached))
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
@@ -165,11 +258,21 @@ impl Store {
 
     /// Remember everything the LLM said about the postings it scored, so the
     /// export and deadline reminders can use it later.
-    pub fn save_scores(&self, scored: &[Scored]) -> Result<()> {
+    /// A source-published deadline is never overwritten by "the LLM found none".
+    pub fn save_scores(&self, scored: &[Scored], score_key: &str) -> Result<()> {
         for s in scored {
             self.conn.execute(
-                "UPDATE postings SET score = ?2, reason = ?3, deadline = ?4 WHERE fingerprint = ?1",
-                params![s.posting.fingerprint(), s.score, s.reason, s.deadline],
+                "UPDATE postings SET score = ?2, reason = ?3, deadline = COALESCE(?4, deadline),
+                    red_flags = ?5, score_key = ?6
+                 WHERE fingerprint = ?1",
+                params![
+                    s.posting.fingerprint(),
+                    s.score,
+                    s.reason,
+                    s.deadline,
+                    serde_json::to_string(&s.red_flags).unwrap_or_default(),
+                    score_key
+                ],
             )?;
         }
         Ok(())
@@ -271,5 +374,85 @@ impl Store {
         Ok(self
             .conn
             .query_row("SELECT COUNT(*) FROM postings", [], |r| r.get(0))?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_store(name: &str) -> (Store, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("blip-store-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("blip.db");
+        (Store::open(&path).unwrap(), dir)
+    }
+
+    fn posting(company: &str, title: &str, location: &str, url: &str) -> Posting {
+        Posting {
+            company: company.into(),
+            title: title.into(),
+            location: location.into(),
+            url: url.into(),
+            source: "test".into(),
+            season: String::new(),
+            posted: "2026-10-01T00:00:00Z".into(),
+            description: String::new(),
+            deadline: String::new(),
+        }
+    }
+
+    #[test]
+    fn same_job_from_two_sources_is_stored_once() {
+        let (store, dir) = temp_store("dedupe");
+        let community = posting("Datadog", "Software Engineering Intern", "NYC",
+            "https://careers.datadoghq.com/detail/8114161/?utm_source=Simplify&gh_jid=8114161");
+        let board = posting("Datadog", "Software Engineering Intern - 2027", "New York, New York, USA",
+            "https://careers.datadoghq.com/detail/8114161/?gh_jid=8114161");
+        assert!(store.insert_if_new(&community).unwrap());
+        assert!(!store.insert_if_new(&board).unwrap(), "second listing of job 8114161 is a duplicate");
+        assert_eq!(store.total_postings().unwrap(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn known_postings_get_corrected_dates_and_deadlines() {
+        let (store, dir) = temp_store("refresh");
+        let mut p = posting("Robinhood", "SWE Intern", "Menlo Park", "https://x.test/1");
+        p.posted = "2026-10-05T00:00:00Z".into(); // wrong: was updated_at
+        store.insert_if_new(&p).unwrap();
+        p.posted = "2026-08-01T00:00:00Z".into(); // corrected: first_published
+        p.deadline = "2026-10-14".into();
+        assert!(!store.insert_if_new(&p).unwrap());
+        let rows = store.unsurfaced("k").unwrap();
+        assert_eq!(rows[0].0.posted, "2026-08-01T00:00:00Z");
+        assert_eq!(rows[0].0.deadline, "2026-10-14");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn scores_are_cached_per_key_and_keep_source_deadlines() {
+        let (store, dir) = temp_store("cache");
+        let mut p = posting("Acme", "Intern", "Remote", "https://x.test/2");
+        p.deadline = "2026-12-01".into();
+        store.insert_if_new(&p).unwrap();
+        let s = Scored {
+            posting: p.clone(),
+            score: 88,
+            reason: "fits".into(),
+            red_flags: vec!["needs clearance".into()],
+            deadline: None, // the LLM found none
+        };
+        store.save_scores(&[s], "key-A").unwrap();
+
+        let rows = store.unsurfaced("key-A").unwrap();
+        let cached = rows[0].1.as_ref().expect("cached under the same key");
+        assert_eq!(cached.score, 88);
+        assert_eq!(cached.red_flags, vec!["needs clearance".to_string()]);
+        assert_eq!(cached.deadline.as_deref(), Some("2026-12-01"), "source deadline survives");
+
+        let rows = store.unsurfaced("key-B").unwrap();
+        assert!(rows[0].1.is_none(), "a different resume/model/looking-for rescores");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -37,6 +37,9 @@ struct JobDto {
     /// Days until the deadline when it's within CLOSING_SOON_DAYS.
     #[serde(default)]
     closes_in: Option<i64>,
+    /// ✓ pressed and logged; the row stays visible, dimmed.
+    #[serde(default)]
+    applied: bool,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -101,6 +104,9 @@ fn get_state(shared: State<Arc<Shared>>) -> UiState {
 
 #[tauri::command]
 fn scan_now(shared: State<Arc<Shared>>) {
+    if shared.ui.lock().unwrap().status == "scanning" {
+        return;
+    }
     let _ = shared.scan_now.send(());
 }
 
@@ -170,17 +176,22 @@ fn toggle_pause(app: AppHandle, shared: State<Arc<Shared>>) {
     });
 }
 
+/// The results list lives here, not in the page: every state event re-sends
+/// it, so ✕ and ✓ have to change it or the page re-renders the old list.
 #[tauri::command]
-fn dismiss_job(fingerprint: String) -> Result<(), String> {
+fn dismiss_job(app: AppHandle, shared: State<Arc<Shared>>, fingerprint: String) -> Result<(), String> {
     let store = Store::open(&default_db_path()).map_err(|e| e.to_string())?;
-    store.set_status(&fingerprint, "dismissed").map_err(|e| e.to_string())
+    store.set_status(&fingerprint, "dismissed").map_err(|e| e.to_string())?;
+    set_state(&app, &shared, |ui| ui.results.retain(|j| j.fingerprint != fingerprint));
+    Ok(())
 }
 
 /// ✓ Applied: append to the spreadsheet first, and only mark the posting
 /// applied once that worked, so a locked file never silently drops a row.
 #[tauri::command]
-async fn mark_applied(job: JobDto) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<String> {
+async fn mark_applied(app: AppHandle, job: JobDto) -> Result<String, String> {
+    let fingerprint = job.fingerprint.clone();
+    let file = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<String> {
         let cfg = config::load_or_create()?;
         let path = cfg.applied_log_path();
         applied_log::append(
@@ -203,7 +214,14 @@ async fn mark_applied(job: JobDto) -> Result<String, String> {
     })
     .await
     .map_err(|e| e.to_string())?
-    .map_err(|e| format!("{e:#}"))
+    .map_err(|e| format!("{e:#}"))?;
+    let shared = app.state::<Arc<Shared>>();
+    set_state(&app, &shared, |ui| {
+        for j in ui.results.iter_mut().filter(|j| j.fingerprint == fingerprint) {
+            j.applied = true;
+        }
+    });
+    Ok(file)
 }
 
 // ---------- settings ----------
@@ -411,7 +429,7 @@ fn run_cycle(app: &AppHandle, shared: &Shared) {
         let prof = profile::load_or_build(&llm, &cfg)?;
 
         let report = blip_core::run_scan(&store, &cancelled)?;
-        let candidates = store.unsurfaced()?;
+        let candidates = store.unsurfaced(&score::score_key(&cfg, &prof))?;
         let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, TOP_N, &cancelled)?;
         store.mark_surfaced(
             &ranked.iter().map(|s| s.posting.fingerprint()).collect::<Vec<_>>(),
@@ -474,6 +492,7 @@ fn to_dto(s: Scored) -> JobDto {
         posted: humanize_age(&s.posting.posted),
         deadline,
         closes_in,
+        applied: false,
     }
 }
 
@@ -539,29 +558,31 @@ fn humanize_age(posted: &str) -> String {
 fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
     // First cycle shortly after launch, then on the configured interval.
     std::thread::sleep(Duration::from_secs(2));
+    let mut manual = false;
     loop {
-        {
-            let cfg = config::load_or_create().unwrap_or_default();
+        let cfg = config::load_or_create().unwrap_or_default();
+        // Manual scans run even while paused, off-hours, or on low battery;
+        // automatic ones respect all three.
+        let allowed = manual || {
             let paused = shared.ui.lock().unwrap().paused;
             let in_hours = cfg.is_active_hour(chrono::Local::now().hour() as u8);
-            if !paused && in_hours && !battery_low(cfg.battery_pause_below) {
-                run_cycle(&app, &shared);
-            }
+            !paused && in_hours && !battery_low(cfg.battery_pause_below)
+        };
+        if allowed {
+            run_cycle(&app, &shared);
         }
+        // Scan requests made while a cycle was running don't queue another.
+        while rx.try_recv().is_ok() {}
+
         let minutes = config::load_or_create().map(|c| c.cycle_minutes).unwrap_or(30);
-        {
-            let mut ui = shared.ui.lock().unwrap();
-            ui.cycle_minutes = minutes;
-        }
-        // Wait out the interval; a scan_now message cuts it short. Manual
-        // scans run even while paused.
-        match rx.recv_timeout(Duration::from_secs(minutes.max(1) * 60)) {
-            Ok(()) => {
-                run_cycle(&app, &shared);
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        shared.ui.lock().unwrap().cycle_minutes = minutes;
+        // Exactly one cycle per wake-up: a scan_now message cuts the wait
+        // short and *replaces* the automatic cycle, it doesn't add one.
+        manual = match rx.recv_timeout(Duration::from_secs(minutes.max(1) * 60)) {
+            Ok(()) => true,
+            Err(mpsc::RecvTimeoutError::Timeout) => false,
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
-        }
+        };
     }
 }
 

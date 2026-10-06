@@ -26,7 +26,7 @@ pub fn http_client() -> Result<reqwest::blocking::Client> {
 /// never-seen-before postings. A failing source is recorded in
 /// `report.sources` / `report.errors` instead of aborting the cycle.
 /// `cancelled` is polled between sources.
-pub fn run_scan(store: &Store, cancelled: &dyn Fn() -> bool) -> Result<ScanReport> {
+pub fn run_scan(store: &Store, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<ScanReport> {
     let client = http_client()?;
     let mut report = ScanReport::default();
     let mut all = Vec::new();
