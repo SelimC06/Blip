@@ -2,11 +2,13 @@
 //! field to ~20, then the LLM deep-reads only those survivors.
 
 use crate::config::Config;
+use crate::describe;
 use crate::llm::Llm;
-use crate::model::Posting;
+use crate::model::{Cancelled, Posting};
 use crate::profile::Profile;
+use crate::store::Store;
 use anyhow::Result;
-use chrono::{NaiveDate, Utc};
+use chrono::{Local, NaiveDate, Utc};
 use regex::Regex;
 
 #[derive(Debug)]
@@ -15,6 +17,30 @@ pub struct Scored {
     pub score: u8,
     pub reason: String,
     pub red_flags: Vec<String>,
+    /// Application deadline (YYYY-MM-DD), only when the description states one.
+    pub deadline: Option<String>,
+}
+
+/// Small models will invent deadlines. Keep one only if it parses, lies in
+/// the next year, and the description actually talks about a deadline.
+pub fn validate_deadline(raw: Option<&str>, description: &str) -> Option<String> {
+    let raw = raw?.trim();
+    let date = NaiveDate::parse_from_str(raw, "%Y-%m-%d").ok()?;
+    let today = Local::now().date_naive();
+    if date < today || date > today + chrono::Duration::days(365) {
+        return None;
+    }
+    let mentions = Regex::new(
+        r"(?i)\b(deadline|apply by|applications? (close|due|accepted until|will be accepted)|closing date|closes on|no later than)\b",
+    )
+    .unwrap();
+    mentions.is_match(description).then(|| date.format("%Y-%m-%d").to_string())
+}
+
+/// Days from today until a YYYY-MM-DD deadline.
+pub fn days_until(deadline: &str) -> Option<i64> {
+    let d = NaiveDate::parse_from_str(deadline, "%Y-%m-%d").ok()?;
+    Some((d - Local::now().date_naive()).num_days())
 }
 
 /// Posting age in days from either source's format: Simplify ages like
@@ -88,12 +114,17 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+/// Rank candidates and return the top `top_n`. Every scored posting (not
+/// just the top) is saved back to the store with its score and deadline.
+/// `cancelled` is polled before each LLM call.
 pub fn rank(
     llm: &Llm,
     cfg: &Config,
     profile: &Profile,
+    store: &Store,
     candidates: Vec<Posting>,
     top_n: usize,
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<Scored>> {
     let filtered: Vec<Posting> = candidates
         .into_iter()
@@ -117,40 +148,78 @@ pub fn rank(
         .collect();
     by_sim.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     by_sim.truncate(cfg.prefilter_top);
+    let mut shortlist: Vec<Posting> = by_sim.into_iter().map(|(_, p)| p).collect();
+
+    // Fetch real job descriptions for the shortlist (cached in the store).
+    let missing: Vec<(usize, String)> = shortlist
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.description.is_empty() && p.url.starts_with("http"))
+        .map(|(i, p)| (i, p.url.clone()))
+        .collect();
+    if !missing.is_empty() {
+        eprintln!("fetching {} job descriptions…", missing.len());
+        for (i, text) in describe::fetch_missing(&missing) {
+            store.save_description(&shortlist[i].fingerprint(), &text)?;
+            shortlist[i].description = text;
+        }
+    }
 
     // Stage 2: LLM scores each survivor.
-    eprintln!("scoring {} candidates with {}…", by_sim.len(), chat_model_name(cfg));
-    let system = "You are Blip, scoring how well a job posting fits a candidate. \
-                  Respond with only a JSON object: \
-                  {\"score\": <integer 0-100>, \"reason\": \"<one short sentence>\", \
-                  \"red_flags\": [\"<anything disqualifying, often empty>\"]}";
+    eprintln!("scoring {} candidates with {}…", shortlist.len(), chat_model_name(cfg));
+    let today = Local::now().format("%Y-%m-%d");
+    let system = format!(
+        "You are Blip, scoring how well a job posting fits a candidate. Today is {today}. \
+         Internships and co-ops are for current students, so a graduation date after the \
+         internship is normal and never a red flag. \
+         Respond with only a JSON object: \
+         {{\"score\": <integer 0-100>, \"reason\": \"<one short sentence naming the specific fit>\", \
+         \"red_flags\": [\"<anything disqualifying, e.g. degree or citizenship requirements; often empty>\"], \
+         \"deadline\": \"<YYYY-MM-DD only if the description explicitly states an application deadline, otherwise null>\"}}"
+    );
     let profile_str = serde_json::to_string(&profile.data).unwrap_or_default();
 
     let mut scored = Vec::new();
-    for (_, p) in by_sim {
+    for p in shortlist {
+        if cancelled() {
+            return Err(Cancelled.into());
+        }
+        let description = if p.description.is_empty() {
+            "(not available — judge from the title)".to_string()
+        } else {
+            describe::excerpt(&p.description)
+        };
         let user = format!(
             "CANDIDATE PROFILE: {profile_str}\n\
              CANDIDATE IS LOOKING FOR: {}\n\
-             POSTING: {} — {} — {}{}",
+             POSTING: {} — {} — {}{}\n\
+             DESCRIPTION:\n{description}",
             cfg.looking_for,
             p.company,
             p.title,
             p.location,
             if p.season.is_empty() { String::new() } else { format!(" — {}", p.season) },
         );
-        match llm.chat_json(system, &user) {
+        match llm.chat_json(&system, &user) {
             Ok(v) => scored.push(Scored {
                 score: v["score"].as_u64().unwrap_or(0).min(100) as u8,
                 reason: v["reason"].as_str().unwrap_or("").to_string(),
                 red_flags: v["red_flags"]
                     .as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .filter(|s| !s.trim().is_empty())
+                            .collect()
+                    })
                     .unwrap_or_default(),
+                deadline: validate_deadline(v["deadline"].as_str(), &p.description),
                 posting: p,
             }),
             Err(e) => eprintln!("  ⚠ scoring {} — {}: {e}", p.company, p.title),
         }
     }
+    store.save_scores(&scored)?;
 
     // Final order: score, then freshness.
     scored.sort_by(|a, b| {
@@ -163,6 +232,34 @@ pub fn rank(
     });
     scored.truncate(top_n);
     Ok(scored)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_days(n: i64) -> String {
+        (Local::now().date_naive() + chrono::Duration::days(n)).format("%Y-%m-%d").to_string()
+    }
+
+    #[test]
+    fn keeps_a_stated_future_deadline() {
+        let d = in_days(10);
+        assert_eq!(
+            validate_deadline(Some(&d), "Applications close on that date. Apply by then."),
+            Some(d)
+        );
+    }
+
+    #[test]
+    fn rejects_invented_past_and_far_deadlines() {
+        let text = "Application deadline: see portal";
+        assert_eq!(validate_deadline(Some(&in_days(10)), "We build rockets."), None);
+        assert_eq!(validate_deadline(Some(&in_days(-3)), text), None);
+        assert_eq!(validate_deadline(Some(&in_days(500)), text), None);
+        assert_eq!(validate_deadline(Some("next friday"), text), None);
+        assert_eq!(validate_deadline(None, text), None);
+    }
 }
 
 fn chat_model_name(cfg: &Config) -> String {

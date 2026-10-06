@@ -90,6 +90,15 @@
         <span class="flabel">skip MS/PhD-only roles</span>
         <button class="switch" id="skipadv" role="switch" aria-label="Skip MS/PhD-only roles"><span></span></button>
       </div>
+      <div class="field">
+        <div class="fhead">
+          <span class="flabel">notify me at match ≥</span>
+          <button class="switch" id="notifyon" role="switch" aria-label="Notifications"><span></span></button>
+        </div>
+        <div class="seg" id="notifyat">
+          <button data-v="80">80</button><button data-v="85">85</button><button data-v="90">90</button><button data-v="95">95</button>
+        </div>
+      </div>
     </section>
 
     <section class="pane" data-pane="cycle" hidden>
@@ -106,11 +115,21 @@
           <span class="dash">to</span>
           <select id="hend" aria-label="End hour"></select>
         </div>
-        <div class="fhint">Automatic scans only run in this window. Scan now works anytime.</div>
+        <div class="fhint">Scan now works anytime.</div>
+      </div>
+      <div class="field">
+        <span class="flabel">pause on battery below</span>
+        <div class="seg" id="battery">
+          <button data-v="0">never</button><button data-v="10">10%</button><button data-v="20">20%</button><button data-v="30">30%</button>
+        </div>
       </div>
       <div class="field frow">
         <span class="flabel">automatic scans</span>
         <button class="btn" id="pausebtn"></button>
+      </div>
+      <div class="field frow">
+        <span class="flabel">start at login</span>
+        <button class="switch" id="autostart" role="switch" aria-label="Start at login"><span></span></button>
       </div>
     </section>
 
@@ -150,6 +169,14 @@
         </div>
         <div class="fval mono" id="logpath"></div>
         <div class="fhint">✓ adds a row to this spreadsheet. ✕ never does. Your own columns and edits are kept.</div>
+      </div>
+      <div class="field frow">
+        <span class="flabel">last 7 days as CSV</span>
+        <button class="btn" id="exportweek">export…</button>
+      </div>
+      <div class="field">
+        <span class="flabel">sources</span>
+        <div class="sources" id="sources"></div>
       </div>
       <div class="field" id="errrow" hidden>
         <span class="flabel">last error</span>

@@ -93,6 +93,7 @@ fn parse_html_rows(html: &str, season: &str, repo: &str) -> Vec<Posting> {
             source: format!("github:{repo}"),
             season: season.to_string(),
             posted,
+            description: String::new(),
         });
     }
     out

@@ -1,18 +1,25 @@
 //! Blip pill app: a frameless always-on-top window whose Rust side runs the
 //! blip-core pipeline on a schedule and feeds state to the HTML pill UI.
 
+use blip_core::model::{Cancelled, SourceStatus};
 use blip_core::score::{self, Scored};
 use blip_core::store::{default_db_path, Store};
-use blip_core::{applied_log, config, llm::Llm, profile, secrets};
+use blip_core::{applied_log, config, export, llm::Llm, profile, secrets};
 use chrono::Timelike;
 use serde::{Deserialize, Serialize};
-use tauri_plugin_dialog::DialogExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_notification::NotificationExt;
 
 const TOP_N: usize = 5;
+/// Flag deadlines this close in the panel; remind (once) at this many days.
+const CLOSING_SOON_DAYS: i64 = 7;
+const REMIND_DAYS: i64 = 3;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 struct JobDto {
@@ -25,6 +32,11 @@ struct JobDto {
     location: String,
     url: String,
     posted: String,
+    #[serde(default)]
+    deadline: String,
+    /// Days until the deadline when it's within CLOSING_SOON_DAYS.
+    #[serde(default)]
+    closes_in: Option<i64>,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -33,6 +45,8 @@ struct StatsDto {
     new_count: usize,
     duration_secs: u64,
     errors: Vec<String>,
+    sources_total: usize,
+    sources_failed: usize,
 }
 
 /// Everything the frontend needs to render, in one payload.
@@ -44,12 +58,15 @@ struct UiState {
     results: Vec<JobDto>,
     stats: StatsDto,
     cycle_minutes: u64,
+    /// Automatic cycles paused (manual Scan now still works).
+    paused: bool,
 }
 
 struct Shared {
     ui: Mutex<UiState>,
     scan_now: Sender<()>,
     hit: Mutex<HitRect>,
+    cancel: AtomicBool,
 }
 
 /// The visible surface's rect, in logical px relative to the window. The
@@ -87,14 +104,68 @@ fn scan_now(shared: State<Arc<Shared>>) {
     let _ = shared.scan_now.send(());
 }
 
+/// Stops the running cycle at the next checkpoint (between sources or
+/// between LLM calls). The pill goes back to Resting.
+#[tauri::command]
+fn cancel_scan(shared: State<Arc<Shared>>) {
+    shared.cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn source_health() -> Result<Vec<SourceStatus>, String> {
+    Store::open(&default_db_path())
+        .and_then(|s| s.source_health())
+        .map_err(|e| e.to_string())
+}
+
+/// Save the last 7 days of everything Blip found as CSV. Returns the path,
+/// or None if the user cancelled the save dialog.
+#[tauri::command]
+async fn export_week(app: AppHandle) -> Result<Option<String>, String> {
+    let name = format!("blip-week-{}.csv", chrono::Local::now().format("%Y-%m-%d"));
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Export the last 7 days")
+        .set_file_name(&name)
+        .add_filter("CSV", &["csv"]);
+    if let Some(docs) = dirs_documents() {
+        dialog = dialog.set_directory(docs);
+    }
+    let Some(file) = dialog.blocking_save_file() else { return Ok(None) };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    let rows = Store::open(&default_db_path())
+        .and_then(|s| s.export_since(7))
+        .map_err(|e| e.to_string())?;
+    export::write_csv(&path, &rows).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+fn dirs_documents() -> Option<std::path::PathBuf> {
+    config::Config::default().applied_log_path().parent().map(|p| p.to_path_buf())
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let al = app.autolaunch();
+    if enabled { al.enable() } else { al.disable() }.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn toggle_pause(app: AppHandle, shared: State<Arc<Shared>>) {
     set_state(&app, &shared, |ui| {
-        if ui.status == "paused" {
-            ui.status = "rest".into();
-            ui.message = String::new();
-        } else {
-            ui.status = "paused".into();
+        ui.paused = !ui.paused;
+        // Only idle states switch the pill label; a scan in flight or fresh
+        // results keep theirs, and pausing just stops future automatic cycles.
+        match (ui.paused, ui.status.as_str()) {
+            (true, "rest" | "error") => ui.status = "paused".into(),
+            (false, "paused") => ui.status = "rest".into(),
+            _ => {}
         }
     });
 }
@@ -329,63 +400,130 @@ fn run_cycle(app: &AppHandle, shared: &Shared) {
         ui.message = String::new();
     });
 
+    shared.cancel.store(false, Ordering::SeqCst);
+    let cancelled = || shared.cancel.load(Ordering::SeqCst);
+
     let started = Instant::now();
-    let outcome = (|| -> anyhow::Result<(Vec<Scored>, StatsDto)> {
+    let outcome = (|| -> anyhow::Result<(Vec<Scored>, StatsDto, config::Config)> {
         let cfg = config::load_or_create()?;
         let store = Store::open(&default_db_path())?;
         let llm = Llm::new(&cfg)?;
         let prof = profile::load_or_build(&llm, &cfg)?;
 
-        let report = blip_core::run_scan(&store)?;
+        let report = blip_core::run_scan(&store, &cancelled)?;
         let candidates = store.unsurfaced()?;
-        let ranked = score::rank(&llm, &cfg, &prof, candidates, TOP_N)?;
+        let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, TOP_N, &cancelled)?;
         store.mark_surfaced(
             &ranked.iter().map(|s| s.posting.fingerprint()).collect::<Vec<_>>(),
         )?;
-        Ok((
-            ranked,
-            StatsDto {
-                scanned: report.scanned,
-                new_count: report.new.len(),
-                duration_secs: started.elapsed().as_secs(),
-                errors: report.errors,
-            },
-        ))
+        let stats = StatsDto {
+            scanned: report.scanned,
+            new_count: report.new.len(),
+            duration_secs: started.elapsed().as_secs(),
+            sources_total: report.sources.len(),
+            sources_failed: report.sources.iter().filter(|s| !s.ok).count(),
+            errors: report.errors,
+        };
+        Ok((ranked, stats, cfg))
     })();
 
     match outcome {
-        Ok((ranked, stats)) => {
-            let results: Vec<JobDto> = ranked
-                .into_iter()
-                .map(|s| JobDto {
-                    fingerprint: s.posting.fingerprint(),
-                    score: s.score,
-                    reason: s.reason,
-                    red_flags: s.red_flags,
-                    company: s.posting.company,
-                    title: s.posting.title,
-                    location: s.posting.location,
-                    url: s.posting.url,
-                    posted: humanize_age(&s.posting.posted),
-                })
-                .collect();
+        Ok((ranked, stats, cfg)) => {
+            let results: Vec<JobDto> = ranked.into_iter().map(to_dto).collect();
+            if cfg.notify_enabled {
+                notify_strong_matches(app, &results, cfg.notify_threshold);
+                send_deadline_reminders(app);
+            }
             set_state(app, shared, |ui| {
-                // Many failed sources with zero yield = loud error, not quiet success.
-                if results.is_empty() && !stats.errors.is_empty() {
+                // Every source down = loud error; a few down = results plus a
+                // footer note, so one flaky board doesn't hide good matches.
+                if stats.sources_total > 0 && stats.sources_failed == stats.sources_total {
                     ui.status = "error".into();
-                    ui.message = stats.errors.join("; ");
+                    ui.message = format!("All sources failed. {}", stats.errors.join("; "));
                 } else {
                     ui.status = "complete".into();
+                    ui.message = String::new();
                 }
                 ui.results = results;
                 ui.stats = stats;
             });
         }
+        Err(e) if e.is::<Cancelled>() => set_state(app, shared, |ui| {
+            ui.status = if ui.paused { "paused" } else { "rest" }.into();
+            ui.message = String::new();
+        }),
         Err(e) => set_state(app, shared, |ui| {
             ui.status = "error".into();
-            ui.message = e.to_string();
+            ui.message = format!("{e:#}");
         }),
     }
+}
+
+fn to_dto(s: Scored) -> JobDto {
+    let deadline = s.deadline.unwrap_or_default();
+    let closes_in = score::days_until(&deadline).filter(|d| (0..=CLOSING_SOON_DAYS).contains(d));
+    JobDto {
+        fingerprint: s.posting.fingerprint(),
+        score: s.score,
+        reason: s.reason,
+        red_flags: s.red_flags,
+        company: s.posting.company,
+        title: s.posting.title,
+        location: s.posting.location,
+        url: s.posting.url,
+        posted: humanize_age(&s.posting.posted),
+        deadline,
+        closes_in,
+    }
+}
+
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// One notification per cycle, and only when something clears the bar.
+fn notify_strong_matches(app: &AppHandle, results: &[JobDto], threshold: u8) {
+    let strong: Vec<&JobDto> = results.iter().filter(|j| j.score >= threshold).collect();
+    let Some(best) = strong.first() else { return };
+    let title = if strong.len() == 1 {
+        format!("Strong match · {}", best.score)
+    } else {
+        format!("{} strong matches", strong.len())
+    };
+    let mut body = format!("{} — {}", best.company, best.title);
+    if strong.len() > 1 {
+        body.push_str(&format!(" (+{} more)", strong.len() - 1));
+    }
+    notify(app, &title, &body);
+}
+
+/// Shown-but-not-acted-on roles whose stated deadline is near: remind once.
+fn send_deadline_reminders(app: &AppHandle) {
+    let Ok(store) = Store::open(&default_db_path()) else { return };
+    let Ok(due) = store.due_reminders(REMIND_DAYS) else { return };
+    for r in due {
+        let when = match score::days_until(&r.deadline) {
+            Some(0) => "today".to_string(),
+            Some(1) => "tomorrow".to_string(),
+            Some(d) => format!("in {d} days"),
+            None => continue,
+        };
+        notify(app, &format!("Closes {when}: {}", r.company), &r.title);
+        let _ = store.mark_reminded(&r.fingerprint);
+    }
+}
+
+/// True when on battery power below the threshold (0 disables).
+fn battery_low(threshold: u8) -> bool {
+    if threshold == 0 {
+        return false;
+    }
+    let Ok(manager) = starship_battery::Manager::new() else { return false };
+    let Ok(batteries) = manager.batteries() else { return false };
+    batteries.flatten().any(|b| {
+        b.state() == starship_battery::State::Discharging
+            && b.state_of_charge().value * 100.0 < threshold as f32
+    })
 }
 
 fn humanize_age(posted: &str) -> String {
@@ -404,9 +542,9 @@ fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
     loop {
         {
             let cfg = config::load_or_create().unwrap_or_default();
-            let paused = shared.ui.lock().unwrap().status == "paused";
+            let paused = shared.ui.lock().unwrap().paused;
             let in_hours = cfg.is_active_hour(chrono::Local::now().hour() as u8);
-            if !paused && in_hours {
+            if !paused && in_hours && !battery_low(cfg.battery_pause_below) {
                 run_cycle(&app, &shared);
             }
         }
@@ -437,16 +575,29 @@ pub fn run() {
         }),
         scan_now: tx,
         hit: Mutex::new(INITIAL_HIT),
+        cancel: AtomicBool::new(false),
     });
 
     let shared_for_setup = shared.clone();
     tauri::Builder::default()
+        // Must be first: a second launch exits and leaves the running pill alone.
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(shared)
         .invoke_handler(tauri::generate_handler![
             get_state,
             scan_now,
+            cancel_scan,
+            source_health,
+            export_week,
+            get_autostart,
+            set_autostart,
             toggle_pause,
             dismiss_job,
             mark_applied,
@@ -464,6 +615,10 @@ pub fn run() {
             set_hit_rect
         ])
         .setup(move |app| {
+            // A menu-bar-style utility: no Dock icon, no app menu takeover.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             // Pin to the top-right of the monitor, under the menu bar. The
             // surface sits 16px inside the canvas, so the pill lands ~20px
             // from the screen edge.

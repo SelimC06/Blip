@@ -52,7 +52,7 @@ fn cmd_scan(db_path: std::path::PathBuf, limit: usize, top: Option<usize>) -> Re
     let cfg = config::load_or_create()?;
     println!("blip scan · db: {}", db_path.display());
 
-    let report = blip_core::run_scan(&store)?;
+    let report = blip_core::run_scan(&store, &|| false)?;
     for err in &report.errors {
         eprintln!("  ⚠ {err}");
     }
@@ -81,7 +81,7 @@ fn cmd_scan(db_path: std::path::PathBuf, limit: usize, top: Option<usize>) -> Re
     let llm = Llm::new(&cfg)?;
     let prof = profile::load_or_build(&llm, &cfg)?;
     let candidates = store.unsurfaced()?;
-    let ranked = score::rank(&llm, &cfg, &prof, candidates, top_n)?;
+    let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, top_n, &|| false)?;
 
     if ranked.is_empty() {
         println!("\nno candidates passed the filters (season {}, max age {} days)", cfg.season, cfg.max_age_days);
@@ -99,6 +99,9 @@ fn cmd_scan(db_path: std::path::PathBuf, limit: usize, top: Option<usize>) -> Re
         }
         for flag in &s.red_flags {
             println!("        ⚑ {flag}");
+        }
+        if let Some(d) = &s.deadline {
+            println!("        ⏳ applications close {d}");
         }
     }
     store.mark_surfaced(&ranked.iter().map(|s| s.posting.fingerprint()).collect::<Vec<_>>())?;

@@ -10,6 +10,9 @@ pub struct Posting {
     pub season: String,
     /// Raw posted-date/age string from the source ("Oct 05", "2026-10-04T...").
     pub posted: String,
+    /// Plain-text job description when known (Ashby gives it up front;
+    /// others are fetched at scoring time). Empty otherwise.
+    pub description: String,
 }
 
 impl Posting {
@@ -38,4 +41,27 @@ pub struct ScanReport {
     pub scanned: usize,
     pub new: Vec<Posting>,
     pub errors: Vec<String>,
+    pub sources: Vec<SourceStatus>,
 }
+
+/// One source's outcome for the latest cycle (e.g. "greenhouse:stripe").
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SourceStatus {
+    pub name: String,
+    pub ok: bool,
+    pub count: usize,
+    pub error: String,
+}
+
+/// Returned when the user cancels a cycle mid-scan. Callers can tell it
+/// apart from real failures with `err.is::<Cancelled>()`.
+#[derive(Debug)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("scan cancelled")
+    }
+}
+
+impl std::error::Error for Cancelled {}

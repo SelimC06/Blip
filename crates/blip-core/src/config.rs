@@ -26,6 +26,11 @@ pub struct Config {
     pub active_end_hour: u8,
     /// Spreadsheet that ✓ Applied appends to. Empty = ~/Documents/Applied.xlsx.
     pub applied_log_path: String,
+    /// Native notification when a cycle finds a match at or above this score.
+    pub notify_enabled: bool,
+    pub notify_threshold: u8,
+    /// Skip automatic cycles on battery below this percent. 0 = never pause.
+    pub battery_pause_below: u8,
     /// How many embedding-prefiltered candidates the LLM deep-reads per cycle.
     pub prefilter_top: usize,
     /// "ollama" (default, local) or "anthropic" (API key required).
@@ -49,6 +54,9 @@ impl Default for Config {
             active_start_hour: 8,
             active_end_hour: 23,
             applied_log_path: String::new(),
+            notify_enabled: true,
+            notify_threshold: 90,
+            battery_pause_below: 20,
             prefilter_top: 20,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),

@@ -59,6 +59,7 @@ pub fn fetch_board(
             source: format!("greenhouse:{board}"),
             season,
             posted: job["updated_at"].as_str().unwrap_or("").to_string(),
+            description: String::new(),
         });
     }
     Ok(out)

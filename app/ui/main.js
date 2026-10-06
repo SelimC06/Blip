@@ -206,7 +206,8 @@ async function refit() {
 function render() {
   surface.dataset.status = state.status;
   el("pilltext").textContent = LABELS[state.status] || state.status;
-  el("pausebtn").innerHTML = state.status === "paused" ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
+  el("pausebtn").innerHTML = state.paused ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
+  LAYERS.pill.title = state.status === "scanning" ? "Click to stop this scan" : "";
 
   const hasErr = state.status === "error" && state.message;
   el("errrow").hidden = !hasErr;
@@ -257,6 +258,14 @@ function renderJobs() {
       fl.className = "jflag";
       fl.textContent = `⚑ ${f}`;
       main.appendChild(fl);
+    }
+    if (j.closes_in != null) {
+      const c = document.createElement("div");
+      c.className = "jclose";
+      c.textContent = j.closes_in === 0 ? "⏳ closes today"
+        : j.closes_in === 1 ? "⏳ closes tomorrow"
+        : `⏳ closes in ${j.closes_in} days · ${j.deadline}`;
+      main.appendChild(c);
     }
 
     const acts = document.createElement("div");
@@ -326,7 +335,7 @@ function renderStats() {
   if (s.duration_secs != null) bits.push(`cycle ${s.duration_secs}s`);
   if (s.scanned != null) bits.push(`${s.scanned} scanned`);
   if (s.new_count != null) bits.push(`${s.new_count} new`);
-  if (s.errors && s.errors.length) bits.push(`${s.errors.length} source error${s.errors.length > 1 ? "s" : ""}`);
+  if (s.sources_failed) bits.push(`${s.sources_failed}/${s.sources_total} sources down`);
   el("stats").textContent = bits.join("  ·  ") || "no cycle yet";
 }
 
@@ -334,8 +343,11 @@ function renderStats() {
 
 LAYERS.pill.addEventListener("click", (e) => {
   if (e.target.closest("#gear")) return;
-  if (state.status === "complete" && state.results.length) setView("panel");
-  else if (state.status !== "scanning") invoke("scan_now").catch(() => {});
+  if (state.status === "scanning") {
+    invoke("cancel_scan").catch(() => {});
+    el("pilltext").textContent = "Stopping";
+  } else if (state.status === "complete" && state.results.length) setView("panel");
+  else invoke("scan_now").catch(() => {});
 });
 el("gear").addEventListener("click", async (e) => {
   e.stopPropagation();
@@ -364,9 +376,39 @@ for (const id of ["hstart", "hend"]) {
 
 const basename = (p) => (p || "").split(/[\\/]/).pop();
 
+let sources = [];
+let autostart = false;
+
 async function loadSettings() {
   try { settings = await invoke("get_settings"); } catch (err) { console.error(err); return; }
+  [sources, autostart] = await Promise.all([
+    invoke("source_health").catch(() => []),
+    invoke("get_autostart").catch(() => false),
+  ]);
   renderSettings();
+}
+
+function renderSources() {
+  const box = el("sources");
+  box.textContent = "";
+  if (!sources.length) {
+    box.textContent = "Checked on the next scan.";
+    box.className = "sources fhint";
+    return;
+  }
+  box.className = "sources";
+  for (const s of sources) {
+    const row = document.createElement("div");
+    row.className = s.ok ? "src" : "src bad";
+    row.title = s.ok ? `${s.count} matching roles last scan` : s.error;
+    const dot = document.createElement("i");
+    const name = document.createElement("span");
+    name.textContent = s.name.replace(/^(github|greenhouse|ashby):/, "");
+    const n = document.createElement("b");
+    n.textContent = s.ok ? s.count : "down";
+    row.append(dot, name, n);
+    box.appendChild(row);
+  }
 }
 
 function setSeg(id, value) {
@@ -387,9 +429,18 @@ function renderSettings() {
   el("skipadv").classList.toggle("on", c.exclude_advanced_degree);
   el("skipadv").setAttribute("aria-checked", c.exclude_advanced_degree);
 
+  el("notifyon").classList.toggle("on", c.notify_enabled);
+  el("notifyon").setAttribute("aria-checked", c.notify_enabled);
+  setSeg("notifyat", c.notify_threshold);
+  el("notifyat").style.opacity = c.notify_enabled ? 1 : 0.45;
+
   setSeg("interval", c.cycle_minutes);
   el("hstart").value = c.active_start_hour;
   el("hend").value = c.active_end_hour;
+  setSeg("battery", c.battery_pause_below);
+  el("autostart").classList.toggle("on", autostart);
+  el("autostart").setAttribute("aria-checked", autostart);
+  renderSources();
 
   setSeg("backend", c.backend);
   el("ollamafields").hidden = c.backend !== "ollama";
@@ -561,6 +612,29 @@ el("skipadv").addEventListener("click", () => changed((c) => { c.exclude_advance
 el("interval").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (b) changed((c) => { c.cycle_minutes = Number(b.dataset.v); });
+});
+el("notifyon").addEventListener("click", () => changed((c) => { c.notify_enabled = !c.notify_enabled; }));
+el("notifyat").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.notify_threshold = Number(b.dataset.v); c.notify_enabled = true; });
+});
+el("battery").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.battery_pause_below = Number(b.dataset.v); });
+});
+el("autostart").addEventListener("click", async () => {
+  try {
+    await invoke("set_autostart", { enabled: !autostart });
+    autostart = !autostart;
+    renderSettings();
+    flashSaved(autostart ? "starts at login" : "won't start at login");
+  } catch (err) { flashSaved(`couldn't change: ${err}`, true); }
+});
+el("exportweek").addEventListener("click", async () => {
+  try {
+    const path = await invoke("export_week");
+    if (path) flashSaved(`saved ${basename(path)}`);
+  } catch (err) { flashSaved(String(err), true); }
 });
 el("hstart").addEventListener("change", (e) => changed((c) => { c.active_start_hour = Number(e.target.value); }));
 el("hend").addEventListener("change", (e) => changed((c) => { c.active_end_hour = Number(e.target.value); }));
