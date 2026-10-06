@@ -1,0 +1,46 @@
+# Builds Blip for macOS (.app + .dmg) and Windows (.exe installer + .msi).
+# Runs on manual trigger and on version tags. Artifacts are unsigned: macOS
+# shows a Gatekeeper prompt (right-click → Open) and Windows shows SmartScreen.
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: blip-macos
+            paths: |
+              target/release/bundle/dmg/*.dmg
+              target/release/bundle/macos/*.app
+          - os: windows-latest
+            artifact: blip-windows
+            paths: |
+              target/release/bundle/nsis/*.exe
+              target/release/bundle/msi/*.msi
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build
+        working-directory: app/src-tauri
+        run: cargo tauri build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
