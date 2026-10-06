@@ -1,4 +1,6 @@
+pub mod applied_log;
 pub mod config;
+pub mod secrets;
 pub mod llm;
 pub mod model;
 pub mod profile;

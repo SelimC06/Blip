@@ -20,6 +20,12 @@ pub struct Config {
     pub exclude_advanced_degree: bool,
     /// Minutes between automatic scan cycles.
     pub cycle_minutes: u64,
+    /// Automatic cycles only run between these local hours (0–24). Equal
+    /// values mean "always". Manual scans ignore this.
+    pub active_start_hour: u8,
+    pub active_end_hour: u8,
+    /// Spreadsheet that ✓ Applied appends to. Empty = ~/Documents/Applied.xlsx.
+    pub applied_log_path: String,
     /// How many embedding-prefiltered candidates the LLM deep-reads per cycle.
     pub prefilter_top: usize,
     /// "ollama" (default, local) or "anthropic" (API key required).
@@ -40,12 +46,40 @@ impl Default for Config {
             max_age_days: 7.0,
             exclude_advanced_degree: true,
             cycle_minutes: 30,
+            active_start_hour: 8,
+            active_end_hour: 23,
+            applied_log_path: String::new(),
             prefilter_top: 20,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),
             embed_model: "nomic-embed-text".into(),
             anthropic_model: "claude-opus-5-5".into(),
+        }
+    }
+}
+
+impl Config {
+    pub fn applied_log_path(&self) -> PathBuf {
+        if self.applied_log_path.trim().is_empty() {
+            dirs::document_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("Applied.xlsx")
+        } else {
+            PathBuf::from(&self.applied_log_path)
+        }
+    }
+
+    /// Whether an automatic cycle may run at this local hour. Handles
+    /// windows that wrap midnight (e.g. 22 → 6).
+    pub fn is_active_hour(&self, hour: u8) -> bool {
+        let (s, e) = (self.active_start_hour % 24, self.active_end_hour % 24);
+        if s == e {
+            true
+        } else if s < e {
+            hour >= s && hour < e
+        } else {
+            hour >= s || hour < e
         }
     }
 }

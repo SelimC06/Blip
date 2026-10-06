@@ -84,8 +84,9 @@ impl Llm {
     }
 
     fn anthropic_chat_json(&self, system: &str, user: &str) -> Result<Value> {
-        let key = std::env::var("ANTHROPIC_API_KEY")
-            .context("backend is \"anthropic\" but ANTHROPIC_API_KEY is not set")?;
+        let key = crate::secrets::anthropic_key().context(
+            "backend is \"anthropic\" but no API key is saved — add one in Settings → Model",
+        )?;
         let resp: Value = self
             .client
             .post("https://api.anthropic.com/v1/messages")

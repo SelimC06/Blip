@@ -188,7 +188,6 @@ function refit() {
 function render() {
   surface.dataset.status = state.status;
   el("pilltext").textContent = LABELS[state.status] || state.status;
-  el("cycletxt").textContent = `every ${state.cycle_minutes} min`;
   el("pausebtn").innerHTML = state.status === "paused" ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
 
   const hasErr = state.status === "error" && state.message;
@@ -197,6 +196,7 @@ function render() {
 
   renderJobs();
   renderStats();
+  renderSettings();
 }
 
 function renderJobs() {
@@ -223,10 +223,7 @@ function renderJobs() {
     title.className = "jtitle";
     title.textContent = j.title;
     title.title = "Open posting";
-    title.onclick = () => {
-      invoke("open_link", { url: j.url }).catch(() => {});
-      invoke("job_action", { fingerprint: j.fingerprint, action: "viewed" }).catch(() => {});
-    };
+    title.onclick = () => invoke("open_link", { url: j.url }).catch(() => {});
     const meta = document.createElement("div");
     meta.className = "jmeta";
     meta.textContent = [j.company, j.location, j.posted && `posted ${j.posted}`].filter(Boolean).join(" · ");
@@ -251,9 +248,16 @@ function renderJobs() {
     yes.title = "Applied — log it";
     yes.setAttribute("aria-label", "Mark applied");
     yes.innerHTML = ICONS.check;
-    yes.onclick = () => {
-      invoke("job_action", { fingerprint: j.fingerprint, action: "applied" }).catch(() => {});
+    yes.onclick = async () => {
+      if (row.classList.contains("done")) return;
       row.classList.add("done");
+      try {
+        const file = await invoke("mark_applied", { job: j });
+        notice(`added to ${file}`);
+      } catch (err) {
+        row.classList.remove("done");
+        notice(String(err), true);
+      }
     };
     const no = document.createElement("button");
     no.className = "no";
@@ -270,7 +274,7 @@ function renderJobs() {
 
 // Dismissed rows slide out, collapse their height, and the card refits.
 async function dismissRow(row, j) {
-  invoke("job_action", { fingerprint: j.fingerprint, action: "dismissed" }).catch(() => {});
+  invoke("dismiss_job", { fingerprint: j.fingerprint }).catch(() => {});
   state.results = state.results.filter((r) => r.fingerprint !== j.fingerprint);
   if (!reduceMotion) {
     const h = row.offsetHeight;
@@ -286,7 +290,19 @@ async function dismissRow(row, j) {
   refit();
 }
 
+// Briefly replaces the stats footer with a confirmation or an error.
+let noticeTimer = null;
+function notice(text, bad = false) {
+  const f = el("stats");
+  clearTimeout(noticeTimer);
+  f.textContent = text;
+  f.title = text;
+  f.className = bad ? "note bad" : "note";
+  noticeTimer = setTimeout(() => { f.className = ""; f.title = ""; renderStats(); }, bad ? 6000 : 2200);
+}
+
 function renderStats() {
+  if (el("stats").classList.contains("note")) return;
   const s = state.stats || {};
   const bits = [];
   if (s.duration_secs != null) bits.push(`cycle ${s.duration_secs}s`);
@@ -303,7 +319,11 @@ LAYERS.pill.addEventListener("click", (e) => {
   if (state.status === "complete" && state.results.length) setView("panel");
   else if (state.status !== "scanning") invoke("scan_now").catch(() => {});
 });
-el("gear").addEventListener("click", (e) => { e.stopPropagation(); setView("settings"); });
+el("gear").addEventListener("click", async (e) => {
+  e.stopPropagation();
+  await loadSettings(); // render the card before measuring it for the morph
+  setView("settings");
+});
 el("setclose").addEventListener("click", () => setView("pill"));
 el("minbtn").addEventListener("click", () => setView("pill"));
 el("scannow").addEventListener("click", () => { invoke("scan_now").catch(() => {}); setView("pill"); });
@@ -313,6 +333,206 @@ el("openall").addEventListener("click", () => {
   for (const j of state.results) invoke("open_link", { url: j.url }).catch(() => {});
 });
 
+// ---------- settings ----------
+
+let settings = null; // { config, has_api_key, applied_log_resolved, applied_log_exists, profile_summary }
+let activeTab = "profile";
+let saveTimer = null;
+
+const hourLabel = (h) => (h === 0 || h === 24 ? "12 am" : h === 12 ? "12 pm" : h < 12 ? `${h} am` : `${h - 12} pm`);
+for (const id of ["hstart", "hend"]) {
+  for (let h = 0; h < 24; h++) el(id).add(new Option(hourLabel(h), h));
+}
+
+const basename = (p) => (p || "").split(/[\\/]/).pop();
+
+async function loadSettings() {
+  try { settings = await invoke("get_settings"); } catch (err) { console.error(err); return; }
+  renderSettings();
+}
+
+function setSeg(id, value) {
+  for (const b of el(id).children) b.classList.toggle("on", b.dataset.v === String(value));
+}
+
+function renderSettings() {
+  if (!settings) return;
+  const c = settings.config;
+
+  el("resumename").textContent = c.resume_path ? basename(c.resume_path) : "none yet — choose your resume";
+  el("resumesummary").textContent = settings.profile_summary;
+  if (document.activeElement !== el("lookingfor")) el("lookingfor").value = c.looking_for;
+
+  for (const b of el("roletypes").children) b.classList.toggle("on", c.role_types.includes(b.dataset.v));
+  if (document.activeElement !== el("season")) el("season").value = c.season;
+  setSeg("maxage", c.max_age_days);
+  el("skipadv").classList.toggle("on", c.exclude_advanced_degree);
+  el("skipadv").setAttribute("aria-checked", c.exclude_advanced_degree);
+
+  setSeg("interval", c.cycle_minutes);
+  el("hstart").value = c.active_start_hour;
+  el("hend").value = c.active_end_hour;
+
+  setSeg("backend", c.backend);
+  el("ollamafields").hidden = c.backend !== "ollama";
+  el("anthropicfields").hidden = c.backend !== "anthropic";
+  if (document.activeElement !== el("amodel")) el("amodel").value = c.anthropic_model;
+  const ks = el("keystatus");
+  ks.textContent = settings.has_api_key ? "Saved in your Keychain." : "No key saved.";
+  ks.className = settings.has_api_key ? "fhint ok" : "fhint";
+  el("savekey").textContent = settings.has_api_key ? "replace" : "save";
+
+  el("logpath").textContent = settings.applied_log_resolved;
+  el("openlog").disabled = !settings.applied_log_exists;
+
+  const hasErr = state.status === "error" && state.message;
+  el("errrow").hidden = !hasErr;
+  if (hasErr) el("errtxt").textContent = state.message;
+}
+
+// Every change saves itself shortly after; the footer confirms.
+function changed(mutate) {
+  mutate(settings.config);
+  renderSettings();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      await invoke("save_settings", { cfg: settings.config });
+      flashSaved("saved");
+    } catch (err) {
+      flashSaved(`couldn't save: ${err}`, true);
+    }
+  }, 350);
+}
+
+let savedTimer = null;
+function flashSaved(text, bad = false) {
+  const s = el("savedtxt");
+  s.textContent = text;
+  s.style.color = bad ? "var(--red)" : "";
+  s.style.opacity = 1;
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(() => { s.style.opacity = 0; }, bad ? 5000 : 1400);
+}
+
+function showTab(tab) {
+  activeTab = tab;
+  for (const b of el("tabs").children) {
+    b.classList.toggle("on", b.dataset.tab === tab);
+    b.setAttribute("aria-selected", b.dataset.tab === tab);
+  }
+  for (const p of document.querySelectorAll(".pane")) p.hidden = p.dataset.pane !== tab;
+  if (tab === "model") refreshModels();
+  refit();
+}
+
+async function refreshModels() {
+  const sel = el("chatmodel");
+  const current = settings?.config.chat_model;
+  try {
+    const models = await invoke("list_models");
+    sel.textContent = "";
+    for (const m of models) sel.add(new Option(m, m));
+    if (current && !models.includes(current)) sel.add(new Option(`${current} (not installed)`, current));
+    sel.value = current;
+    el("modelhint").textContent = "Runs on this machine. Nothing leaves it.";
+    el("modelhint").className = "fhint";
+  } catch (err) {
+    sel.textContent = "";
+    sel.add(new Option(current || "—", current || ""));
+    el("modelhint").textContent = `${err}. Start it with: ollama serve`;
+    el("modelhint").className = "fhint bad";
+  }
+  refit();
+}
+
+el("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) showTab(b.dataset.tab);
+});
+
+el("pickresume").addEventListener("click", async () => {
+  const btn = el("pickresume");
+  const sum = el("resumesummary");
+  btn.disabled = true;
+  try {
+    const picked = await invoke("pick_resume");
+    if (picked === null) return;
+    await loadSettings();
+    sum.textContent = "Reading your resume… about 10 seconds";
+    sum.className = "fhint";
+    refit();
+    await invoke("rebuild_profile");
+    await loadSettings();
+    el("resumesummary").className = "fhint ok";
+    flashSaved("profile rebuilt");
+  } catch (err) {
+    sum.textContent = String(err);
+    sum.className = "fhint bad";
+  } finally {
+    btn.disabled = false;
+    refit();
+  }
+});
+
+el("lookingfor").addEventListener("input", (e) => changed((c) => { c.looking_for = e.target.value; }));
+el("season").addEventListener("input", (e) => changed((c) => { c.season = e.target.value.trim(); }));
+el("amodel").addEventListener("input", (e) => changed((c) => { c.anthropic_model = e.target.value.trim(); }));
+
+el("roletypes").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  changed((c) => {
+    const v = b.dataset.v;
+    c.role_types = c.role_types.includes(v) ? c.role_types.filter((x) => x !== v) : [...c.role_types, v];
+  });
+});
+el("maxage").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.max_age_days = Number(b.dataset.v); });
+});
+el("skipadv").addEventListener("click", () => changed((c) => { c.exclude_advanced_degree = !c.exclude_advanced_degree; }));
+el("interval").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.cycle_minutes = Number(b.dataset.v); });
+});
+el("hstart").addEventListener("change", (e) => changed((c) => { c.active_start_hour = Number(e.target.value); }));
+el("hend").addEventListener("change", (e) => changed((c) => { c.active_end_hour = Number(e.target.value); }));
+el("backend").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  changed((c) => { c.backend = b.dataset.v; });
+  refit();
+});
+el("chatmodel").addEventListener("change", (e) => changed((c) => { c.chat_model = e.target.value; }));
+
+el("savekey").addEventListener("click", async () => {
+  const input = el("apikey");
+  const ks = el("keystatus");
+  if (!input.value.trim()) {
+    ks.textContent = "Paste a key first.";
+    ks.className = "fhint bad";
+    return;
+  }
+  try {
+    await invoke("set_api_key", { key: input.value });
+    input.value = "";
+    await loadSettings();
+    flashSaved("key saved to Keychain");
+  } catch (err) {
+    ks.textContent = `Couldn't save key: ${err}`;
+    ks.className = "fhint bad";
+  }
+});
+
+el("picklog").addEventListener("click", async () => {
+  try {
+    const picked = await invoke("pick_applied_log");
+    if (picked) { await loadSettings(); flashSaved("log file set"); }
+  } catch (err) { flashSaved(String(err), true); }
+});
+el("openlog").addEventListener("click", () => invoke("open_applied_log").catch((err) => flashSaved(String(err), true)));
+
 // ---------- state sync ----------
 
 function onState(next) {
@@ -320,8 +540,8 @@ function onState(next) {
   state = next;
   lastStatus = state.status;
   render();
-  if (state.status === "complete" && wasStatus === "scanning" && state.results.length) {
-    setView("panel"); // fresh results: open up
+  if (state.status === "complete" && wasStatus === "scanning" && state.results.length && view === "pill") {
+    setView("panel"); // fresh results: open up (but never yank away settings mid-edit)
   } else if (state.status === "scanning" && view === "panel") {
     setView("pill"); // a new scan folds the old results away
   } else if (view !== "pill") {

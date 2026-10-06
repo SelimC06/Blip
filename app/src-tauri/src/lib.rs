@@ -3,8 +3,10 @@
 
 use blip_core::score::{self, Scored};
 use blip_core::store::{default_db_path, Store};
-use blip_core::{config, llm::Llm, profile};
-use serde::Serialize;
+use blip_core::{applied_log, config, llm::Llm, profile, secrets};
+use chrono::Timelike;
+use serde::{Deserialize, Serialize};
+use tauri_plugin_dialog::DialogExt;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const TOP_N: usize = 5;
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 struct JobDto {
     fingerprint: String,
     score: u8,
@@ -98,15 +100,182 @@ fn toggle_pause(app: AppHandle, shared: State<Arc<Shared>>) {
 }
 
 #[tauri::command]
-fn job_action(fingerprint: String, action: String) -> Result<(), String> {
-    let status = match action.as_str() {
-        "applied" => "applied",
-        "dismissed" => "dismissed",
-        "viewed" => return Ok(()), // Phase 3: track views too
-        _ => return Err(format!("unknown action {action}")),
-    };
+fn dismiss_job(fingerprint: String) -> Result<(), String> {
     let store = Store::open(&default_db_path()).map_err(|e| e.to_string())?;
-    store.set_status(&fingerprint, status).map_err(|e| e.to_string())
+    store.set_status(&fingerprint, "dismissed").map_err(|e| e.to_string())
+}
+
+/// ✓ Applied: append to the spreadsheet first, and only mark the posting
+/// applied once that worked, so a locked file never silently drops a row.
+#[tauri::command]
+async fn mark_applied(job: JobDto) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<String> {
+        let cfg = config::load_or_create()?;
+        let path = cfg.applied_log_path();
+        applied_log::append(
+            &path,
+            &applied_log::AppliedRow {
+                date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+                company: job.company.clone(),
+                role: job.title.clone(),
+                location: job.location.clone(),
+                score: job.score,
+                posted: job.posted.clone(),
+                url: job.url.clone(),
+            },
+        )?;
+        Store::open(&default_db_path())?.set_status(&job.fingerprint, "applied")?;
+        Ok(path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))
+}
+
+// ---------- settings ----------
+
+#[derive(Serialize)]
+struct SettingsDto {
+    config: config::Config,
+    has_api_key: bool,
+    applied_log_resolved: String,
+    applied_log_exists: bool,
+    profile_summary: String,
+}
+
+fn profile_summary() -> String {
+    let Ok(raw) = std::fs::read_to_string(profile::profile_path()) else {
+        return String::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return String::new();
+    };
+    let edu = &v["data"]["education"];
+    [&edu["school"], &edu["degree"], &edu["grad_date"]]
+        .iter()
+        .filter_map(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+#[tauri::command]
+fn get_settings() -> Result<SettingsDto, String> {
+    let cfg = config::load_or_create().map_err(|e| e.to_string())?;
+    let log = cfg.applied_log_path();
+    Ok(SettingsDto {
+        has_api_key: secrets::has_stored_anthropic_key(),
+        applied_log_resolved: log.to_string_lossy().into_owned(),
+        applied_log_exists: log.exists(),
+        profile_summary: profile_summary(),
+        config: cfg,
+    })
+}
+
+#[tauri::command]
+fn save_settings(app: AppHandle, shared: State<Arc<Shared>>, cfg: config::Config) -> Result<(), String> {
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    set_state(&app, &shared, |ui| ui.cycle_minutes = cfg.cycle_minutes);
+    Ok(())
+}
+
+#[tauri::command]
+fn set_api_key(key: String) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("key is empty".into());
+    }
+    secrets::set_anthropic_key(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_api_key() -> Result<(), String> {
+    secrets::delete_anthropic_key().map_err(|e| e.to_string())
+}
+
+/// Pick a resume and save it to config. None if the user cancelled.
+#[tauri::command]
+async fn pick_resume(app: AppHandle) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose your resume")
+        .add_filter("Resume", &["pdf", "txt", "md"])
+        .blocking_pick_file();
+    let Some(file) = picked else { return Ok(None) };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    let mut cfg = config::load_or_create().map_err(|e| e.to_string())?;
+    cfg.resume_path = path.to_string_lossy().into_owned();
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    Ok(Some(cfg.resume_path))
+}
+
+/// Rebuild the profile from the configured resume (one LLM call, ~10 s).
+#[tauri::command]
+async fn rebuild_profile() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| -> anyhow::Result<String> {
+        let cfg = config::load_or_create()?;
+        let llm = Llm::new(&cfg)?;
+        profile::build(&llm, &cfg)?;
+        Ok(profile_summary())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("{e:#}"))
+}
+
+#[tauri::command]
+async fn pick_applied_log(app: AppHandle) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose the spreadsheet Blip adds applied roles to")
+        .add_filter("Excel workbook", &["xlsx"])
+        .blocking_pick_file();
+    let Some(file) = picked else { return Ok(None) };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    let mut cfg = config::load_or_create().map_err(|e| e.to_string())?;
+    cfg.applied_log_path = path.to_string_lossy().into_owned();
+    config::save(&cfg).map_err(|e| e.to_string())?;
+    Ok(Some(cfg.applied_log_path))
+}
+
+#[tauri::command]
+fn open_applied_log() -> Result<(), String> {
+    let cfg = config::load_or_create().map_err(|e| e.to_string())?;
+    let path = cfg.applied_log_path();
+    if !path.exists() {
+        return Err("Nothing logged yet — it's created on your first ✓".into());
+    }
+    tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Installed Ollama models, so the Model tab can offer a real list.
+#[tauri::command]
+async fn list_models() -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> anyhow::Result<Vec<String>> {
+        let cfg = config::load_or_create()?;
+        let v: serde_json::Value = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .build()?
+            .get(format!("{}/api/tags", cfg.ollama_url))
+            .send()?
+            .json()?;
+        Ok(v["models"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| m["name"].as_str().map(String::from))
+                    .filter(|n| !n.contains("embed"))
+                    .collect()
+            })
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|_| "Ollama isn't running".to_string())
 }
 
 #[tauri::command]
@@ -234,8 +403,10 @@ fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
     std::thread::sleep(Duration::from_secs(2));
     loop {
         {
+            let cfg = config::load_or_create().unwrap_or_default();
             let paused = shared.ui.lock().unwrap().status == "paused";
-            if !paused {
+            let in_hours = cfg.is_active_hour(chrono::Local::now().hour() as u8);
+            if !paused && in_hours {
                 run_cycle(&app, &shared);
             }
         }
@@ -271,12 +442,23 @@ pub fn run() {
     let shared_for_setup = shared.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(shared)
         .invoke_handler(tauri::generate_handler![
             get_state,
             scan_now,
             toggle_pause,
-            job_action,
+            dismiss_job,
+            mark_applied,
+            get_settings,
+            save_settings,
+            set_api_key,
+            clear_api_key,
+            pick_resume,
+            rebuild_profile,
+            pick_applied_log,
+            open_applied_log,
+            list_models,
             open_link,
             quit_app,
             set_hit_rect

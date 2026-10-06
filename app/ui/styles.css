@@ -22,6 +22,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; }
+/* Author display rules (.pane, .field are flex) otherwise beat the hidden attribute. */
+[hidden] { display: none !important; }
 html, body { background: transparent; height: 100%; overflow: hidden; }
 body {
   font-family: var(--mono); font-size: 11px; color: var(--phosphor);
@@ -96,7 +98,7 @@ svg { display: block; flex: none; }
 /* ---------- cards (results + settings) ---------- */
 .card { display: flex; flex-direction: column; }
 #panelLayer { width: 378px; max-height: 470px; }
-#setLayer { width: 318px; }
+#setLayer { width: 360px; }
 
 /* Shared horizontal rhythm: 14px left edge, 12px right edge, for every
    header, row and footer, so labels and buttons line up down the card. */
@@ -118,6 +120,7 @@ svg { display: block; flex: none; }
 .btn:has(svg) { padding-left: 9px; }
 .btn:hover { color: var(--phosphor); border-color: var(--signal-60); background: var(--panel); }
 .btn:active { transform: scale(.94); }
+.btn:disabled { opacity: .4; pointer-events: none; }
 .btn.accent { color: var(--phosphor); border-color: var(--signal-60); }
 .btn.accent:hover { background: var(--phosphor); color: var(--void); border-color: var(--phosphor); }
 .btn.danger { color: var(--red); border-color: rgba(248, 113, 113, .35); }
@@ -182,6 +185,87 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 /* Fixed width so Pause ↔ Resume doesn't make the button jump. */
 #pausebtn { width: 84px; }
 .err { color: var(--red); word-break: break-word; }
+
+/* ---------- settings ---------- */
+
+/* Segmented control: one recessed track, equal segments. Used for the tab
+   bar and for every pick-one option. */
+.seg {
+  display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; gap: 2px;
+  padding: 2px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line);
+}
+.seg button {
+  height: 24px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--dim); font-size: 10.5px; letter-spacing: .02em; cursor: pointer; white-space: nowrap;
+  transition: color .15s, background .15s;
+}
+.seg button:hover { color: var(--phosphor); }
+.seg button.on { background: var(--void); color: var(--phosphor); box-shadow: inset 0 0 0 1px var(--line); font-weight: 500; }
+.tabs { margin: 10px 12px 2px 14px; }
+
+.pane { padding: 6px 12px 10px 14px; display: flex; flex-direction: column; }
+.field { display: flex; flex-direction: column; gap: 7px; padding: 10px 0; }
+.field + .field, .field + #anthropicfields, .field + [hidden] + #anthropicfields { border-top: 1px solid var(--line); }
+.fhead, .frow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.frow { flex-direction: row; }
+.flabel { color: var(--phosphor); font-weight: 500; line-height: 1; }
+.fval { font-family: var(--read); font-size: 12px; color: var(--phosphor); overflow-wrap: anywhere; }
+.fval.mono { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+.fhint { color: var(--dim); font-family: var(--read); font-size: 11px; line-height: 1.4; }
+.fhint:empty { display: none; }
+.fhint.ok { color: var(--phosphor); }
+.fhint.bad { color: var(--red); }
+
+input[type="text"], input[type="password"], textarea, select {
+  width: 100%; font: inherit; font-size: 11px; color: var(--phosphor);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 9px; outline: none; -webkit-user-select: text; user-select: text;
+  transition: border-color .15s;
+}
+textarea { font-family: var(--read); font-size: 12px; line-height: 1.4; resize: none; }
+input::placeholder, textarea::placeholder { color: rgba(167, 156, 135, .6); }
+input:focus, textarea:focus, select:focus { border-color: var(--signal-60); }
+select {
+  -webkit-appearance: none; appearance: none; height: 30px; padding: 0 28px 0 9px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A79C87' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; background-size: 12px;
+}
+.inline { display: flex; gap: 6px; }
+.inline input { flex: 1; min-width: 0; height: 26px; }
+.hours { display: flex; align-items: center; gap: 8px; }
+.hours select { flex: 1; }
+.dash { color: var(--dim); }
+
+/* Multi-select chips (role types). */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips button {
+  height: 26px; padding: 0 11px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); color: var(--dim); font-size: 10.5px;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.chips button:hover { color: var(--phosphor); border-color: var(--signal-60); }
+.chips button.on { color: var(--void); background: var(--phosphor); border-color: var(--phosphor); }
+
+.switch {
+  width: 34px; height: 20px; border-radius: 999px; flex: none; position: relative; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); transition: background .2s, border-color .2s;
+}
+.switch span {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--dim); transition: transform .25s cubic-bezier(.34, 1.4, .44, 1), background .2s;
+}
+.switch.on { background: var(--phosphor); border-color: var(--phosphor); }
+.switch.on span { transform: translateX(14px); background: var(--void); }
+
+.setfoot {
+  display: flex; justify-content: space-between; align-items: center;
+  height: 44px; padding: 0 12px 0 14px; border-top: 1px solid var(--line); flex: none;
+}
+#savedtxt { color: var(--dim); font-size: 10px; transition: opacity .3s; }
+
+/* Inline notice in the results footer (✓ logged / couldn't save). */
+.card footer.note { color: var(--phosphor); }
+.card footer.note.bad { color: var(--red); }
 
 @media (prefers-reduced-motion: reduce) {
   #surface[data-status="scanning"] .sdot::after { animation: none; }

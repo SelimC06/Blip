@@ -37,15 +37,128 @@
 
   <div class="layer card" id="setLayer">
     <header>
-      <span class="label">blip</span>
-      <button class="btn" id="setclose">close</button>
+      <span class="label">settings</span>
+      <div class="hbtns">
+        <button class="btn accent" id="scannow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>scan now</button>
+        <button class="btn" id="setclose">close</button>
+      </div>
     </header>
-    <div class="row"><span class="rlabel">scan now</span><button class="btn accent" id="scannow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>scan</button></div>
-    <div class="row"><span class="rlabel">pause / resume</span><button class="btn" id="pausebtn"></button></div>
-    <div class="row"><span class="rlabel">cycle</span><span class="rval" id="cycletxt">every 30 min</span></div>
-    <div class="row"><span class="rlabel">full settings</span><span class="rval">phase 3 · config.json for now</span></div>
-    <div class="row" id="errrow" hidden><span class="rlabel">last error</span><span class="rval err" id="errtxt"></span></div>
-    <div class="row"><span class="rlabel">quit blip</span><button class="btn danger" id="quitbtn">quit</button></div>
+
+    <div class="seg tabs" id="tabs" role="tablist">
+      <button role="tab" data-tab="profile" class="on">profile</button>
+      <button role="tab" data-tab="search">search</button>
+      <button role="tab" data-tab="cycle">cycle</button>
+      <button role="tab" data-tab="model">model</button>
+      <button role="tab" data-tab="log">log</button>
+    </div>
+
+    <section class="pane" data-pane="profile">
+      <div class="field">
+        <div class="fhead"><span class="flabel">resume</span><button class="btn" id="pickresume">choose…</button></div>
+        <div class="fval" id="resumename">none yet</div>
+        <div class="fhint" id="resumesummary"></div>
+      </div>
+      <div class="field">
+        <label class="flabel" for="lookingfor">what you're looking for</label>
+        <textarea id="lookingfor" rows="3" spellcheck="false" placeholder="e.g. backend or ML internships, systems-heavy teams"></textarea>
+        <div class="fhint">Steers the match score alongside your resume.</div>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="search" hidden>
+      <div class="field">
+        <span class="flabel">role types</span>
+        <div class="chips" id="roletypes">
+          <button data-v="internship">internship</button>
+          <button data-v="co-op">co-op</button>
+          <button data-v="new-grad">new grad</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="flabel" for="season">season</label>
+        <input id="season" type="text" spellcheck="false" placeholder="Summer 2027">
+      </div>
+      <div class="field">
+        <span class="flabel">max posting age</span>
+        <div class="seg" id="maxage">
+          <button data-v="1">1d</button><button data-v="3">3d</button><button data-v="7">7d</button><button data-v="14">14d</button><button data-v="30">30d</button>
+        </div>
+      </div>
+      <div class="field frow">
+        <span class="flabel">skip MS/PhD-only roles</span>
+        <button class="switch" id="skipadv" role="switch" aria-label="Skip MS/PhD-only roles"><span></span></button>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="cycle" hidden>
+      <div class="field">
+        <span class="flabel">scan every</span>
+        <div class="seg" id="interval">
+          <button data-v="15">15m</button><button data-v="30">30m</button><button data-v="60">1h</button><button data-v="120">2h</button><button data-v="240">4h</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="flabel">active hours</span>
+        <div class="hours">
+          <select id="hstart" aria-label="Start hour"></select>
+          <span class="dash">to</span>
+          <select id="hend" aria-label="End hour"></select>
+        </div>
+        <div class="fhint">Automatic scans only run in this window. Scan now works anytime.</div>
+      </div>
+      <div class="field frow">
+        <span class="flabel">automatic scans</span>
+        <button class="btn" id="pausebtn"></button>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="model" hidden>
+      <div class="field">
+        <span class="flabel">engine</span>
+        <div class="seg" id="backend">
+          <button data-v="ollama">local · ollama</button><button data-v="anthropic">anthropic api</button>
+        </div>
+      </div>
+      <div class="field" id="ollamafields">
+        <label class="flabel" for="chatmodel">model</label>
+        <select id="chatmodel"></select>
+        <div class="fhint" id="modelhint">Runs on this machine. Nothing leaves it.</div>
+      </div>
+      <div id="anthropicfields" hidden>
+        <div class="field">
+          <label class="flabel" for="apikey">api key</label>
+          <div class="inline">
+            <input id="apikey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-ant-…">
+            <button class="btn" id="savekey">save</button>
+          </div>
+          <div class="fhint" id="keystatus"></div>
+        </div>
+        <div class="field">
+          <label class="flabel" for="amodel">model</label>
+          <input id="amodel" type="text" spellcheck="false">
+          <div class="fhint">Your resume and postings are sent to Anthropic for scoring.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="log" hidden>
+      <div class="field">
+        <div class="fhead"><span class="flabel">applied log</span>
+          <div class="hbtns"><button class="btn" id="picklog">choose…</button><button class="btn" id="openlog">open</button></div>
+        </div>
+        <div class="fval mono" id="logpath"></div>
+        <div class="fhint">✓ adds a row to this spreadsheet. ✕ never does. Your own columns and edits are kept.</div>
+      </div>
+      <div class="field" id="errrow" hidden>
+        <span class="flabel">last error</span>
+        <div class="fval err" id="errtxt"></div>
+      </div>
+    </section>
+
+    <footer class="setfoot">
+      <span id="savedtxt"></span>
+      <button class="btn danger" id="quitbtn">quit blip</button>
+    </footer>
   </div>
 
 </div>
