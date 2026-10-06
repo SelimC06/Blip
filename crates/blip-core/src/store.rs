@@ -73,6 +73,36 @@ impl Store {
         Ok(())
     }
 
+    /// Postings never yet shown to the user — the scoring pool each cycle.
+    pub fn unsurfaced(&self) -> Result<Vec<Posting>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT company, title, location, url, source, season, posted
+             FROM postings WHERE status = 'new'",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Posting {
+                company: r.get(0)?,
+                title: r.get(1)?,
+                location: r.get(2)?,
+                url: r.get(3)?,
+                source: r.get(4)?,
+                season: r.get(5)?,
+                posted: r.get(6)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn mark_surfaced(&self, fingerprints: &[String]) -> Result<()> {
+        for fp in fingerprints {
+            self.conn.execute(
+                "UPDATE postings SET status = 'surfaced' WHERE fingerprint = ?1",
+                params![fp],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn total_postings(&self) -> Result<i64> {
         Ok(self
             .conn
