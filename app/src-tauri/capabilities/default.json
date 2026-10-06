@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Blip pill window",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,19 @@
+[package]
+name = "blip-app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "blip_app"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+blip-core = { path = "../../crates/blip-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-opener = "2"

@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blip</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="pill" id="pill" data-s="rest" data-tauri-drag-region>
+  <span class="sdot"></span>
+  <span id="pilltext">Resting</span>
+  <span class="gear" id="gear" title="Settings">&#9881;</span>
+</div>
+
+<div class="panel hide" id="panel">
+  <header>
+    <span>Top matches</span>
+    <div class="hbtns">
+      <button class="minbtn" id="openall" title="Open all in browser">Open all</button>
+      <button class="minbtn" id="minbtn">Minimize</button>
+    </div>
+  </header>
+  <div id="jobs"></div>
+  <footer id="stats"></footer>
+</div>
+
+<div class="panel hide" id="setpanel">
+  <header>
+    <span>Blip</span>
+    <button class="minbtn" id="setclose">Close</button>
+  </header>
+  <div class="row"><b>Scan now</b><span><button class="minbtn" id="scannow">&#9654; Run</button></span></div>
+  <div class="row"><b>Pause / resume</b><span><button class="minbtn" id="pausebtn">&#9208;</button></span></div>
+  <div class="row"><b>Cycle</b><span id="cycletxt">every 30 min</span></div>
+  <div class="row"><b>Full settings</b><span class="dim">coming in Phase 3 — edit config.json for now</span></div>
+  <div class="row" id="errrow" hidden><b>Last error</b><span id="errtxt" class="err"></span></div>
+  <div class="row"><b>Quit Blip</b><span><button class="minbtn" id="quitbtn">Quit</button></span></div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>

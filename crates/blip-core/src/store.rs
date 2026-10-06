@@ -93,6 +93,15 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
+    /// Applied / dismissed / surfaced transitions from the UI.
+    pub fn set_status(&self, fingerprint: &str, status: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE postings SET status = ?2 WHERE fingerprint = ?1",
+            params![fingerprint, status],
+        )?;
+        Ok(())
+    }
+
     pub fn mark_surfaced(&self, fingerprints: &[String]) -> Result<()> {
         for fp in fingerprints {
             self.conn.execute(

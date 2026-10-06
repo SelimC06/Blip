@@ -18,6 +18,8 @@ pub struct Config {
     pub max_age_days: f64,
     /// Drop roles marked 🎓 (requires MS/PhD) on the Simplify list.
     pub exclude_advanced_degree: bool,
+    /// Minutes between automatic scan cycles.
+    pub cycle_minutes: u64,
     /// How many embedding-prefiltered candidates the LLM deep-reads per cycle.
     pub prefilter_top: usize,
     /// "ollama" (default, local) or "anthropic" (API key required).
@@ -37,6 +39,7 @@ impl Default for Config {
             season: "Summer 2027".into(),
             max_age_days: 7.0,
             exclude_advanced_degree: true,
+            cycle_minutes: 30,
             prefilter_top: 20,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
