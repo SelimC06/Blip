@@ -69,6 +69,18 @@
         <textarea id="lookingfor" rows="3" spellcheck="false" placeholder="e.g. backend or ML internships, systems-heavy teams"></textarea>
         <div class="fhint">Steers the match score alongside your resume.</div>
       </div>
+      <div class="field">
+        <span class="flabel">fields you want</span>
+        <div class="chips" id="fieldchips"></div>
+        <div class="fhint">Roles whose titles are only about other fields are skipped before scoring.</div>
+      </div>
+      <div class="field">
+        <span class="flabel">how picky</span>
+        <div class="seg" id="strictness">
+          <button data-v="60">relaxed</button><button data-v="70">normal</button><button data-v="80">strict</button>
+        </div>
+        <div class="fhint" id="strictnesshint"></div>
+      </div>
     </section>
 
     <section class="pane" data-pane="search" hidden>

@@ -104,6 +104,9 @@ pub fn fetch_missing(
                     if cancelled() {
                         return None;
                     }
+                    if let Some(text) = crate::sources::ashby::description_for(client, url) {
+                        return Some((*i, excerpt(&text)));
+                    }
                     // Workday and Oracle job pages are JavaScript-only; read
                     // the JSON their pages load from instead.
                     let api = workday::detail_api_url(url)
@@ -148,13 +151,14 @@ mod tests {
     /// their JSON endpoints. Run with `cargo test -- --ignored`.
     #[test]
     #[ignore]
-    fn reads_workday_and_oracle_descriptions_live() {
+    fn reads_workday_oracle_and_ashby_descriptions_live() {
         let client = crate::http_client().unwrap();
         let orc = crate::sources::oracle::fetch_board(&client, "jpmc.fa.oraclecloud.com/CX_1001", "JPMorgan").unwrap();
         let wd = crate::sources::workday::fetch_board(&client, "generalmotors.wd5/Careers_GM", "GM").unwrap();
-        let urls: Vec<(usize, String)> = vec![(0, orc[0].url.clone()), (1, wd[0].url.clone())];
+        let ashby = crate::sources::ashby::fetch_board(&client, "notion", "Notion").unwrap();
+        let urls: Vec<(usize, String)> = vec![(0, orc[0].url.clone()), (1, wd[0].url.clone()), (2, ashby[0].url.clone())];
         let got = fetch_missing(&urls, &|| false);
-        assert_eq!(got.len(), 2, "both descriptions read: {urls:?}");
+        assert_eq!(got.len(), 3, "all three descriptions read: {urls:?}");
         for (_, text) in got {
             assert!(text.len() > 300, "{text}");
         }

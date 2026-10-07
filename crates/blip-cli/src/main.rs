@@ -5,12 +5,16 @@ use blip_core::{config, llm::Llm, profile, score};
 const USAGE: &str = "usage:
   blip scan [--top N] [--limit N] [--db PATH]   run a cycle; --top scores and ranks
   blip profile --resume PATH                    set resume and (re)build the profile
-  blip find <company name or careers link>      look up a company's job board";
+  blip find <company name or careers link>      look up a company's job board
+  blip rescore                                  re-judge roles already shown under the current scoring (saves nothing)";
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("find") {
         return cmd_find(&args[1..].join(" "));
+    }
+    if args.first().map(String::as_str) == Some("rescore") {
+        return cmd_rescore();
     }
     let mut cmd = "scan";
     let mut db_path = default_db_path();
@@ -35,6 +39,41 @@ fn main() -> Result<()> {
         "profile" => cmd_profile(resume),
         _ => cmd_scan(db_path, limit, top),
     }
+}
+
+/// Compare current scoring against the scores roles were shown with.
+/// Prints one line per role as it goes, then a summary. Saves nothing.
+fn cmd_rescore() -> Result<()> {
+    let cfg = config::load_or_create()?;
+    let store = Store::open(&default_db_path())?;
+    let llm = Llm::new(&cfg)?;
+    let prof = profile::load_or_build(&llm, &cfg)?;
+    let system = score::scoring_prompt(&cfg);
+    let profile_str = serde_json::to_string(&prof.data)?;
+    let rows = store.shown_with_scores()?;
+    let (mut filtered, mut still, mut now_hidden, mut failed) = (0, 0, 0, 0);
+    println!("re-judging {} roles already shown (bar: {}+)\n", rows.len(), cfg.min_score);
+    for (p, old) in rows {
+        let title = format!("{} — {}", p.company, p.title);
+        if !blip_core::fields::in_targets(&p.title, &cfg.target_fields) {
+            filtered += 1;
+            println!("FIELD-FILTERED  {old:>3} → --   {title}");
+            continue;
+        }
+        match score::score_one(&llm, &system, &profile_str, &cfg, p) {
+            Ok(s) => {
+                let shown = s.score >= cfg.min_score;
+                if shown { still += 1 } else { now_hidden += 1 }
+                println!("{}  {old:>3} → {:>3}  {title}\n                          {}", if shown { "shown         " } else { "now hidden    " }, s.score, s.reason);
+            }
+            Err(e) => {
+                failed += 1;
+                println!("ERROR           {old:>3}        {title}: {e}");
+            }
+        }
+    }
+    println!("\nstill shown: {still} · now hidden by the rubric: {now_hidden} · dropped by the field filter: {filtered} · errors: {failed}");
+    Ok(())
 }
 
 fn cmd_find(query: &str) -> Result<()> {

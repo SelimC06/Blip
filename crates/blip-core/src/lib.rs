@@ -3,6 +3,7 @@ pub mod auth;
 pub mod config;
 pub mod describe;
 pub mod export;
+pub mod fields;
 pub mod llm;
 pub mod location;
 pub mod model;

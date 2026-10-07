@@ -58,6 +58,9 @@ pub struct Config {
     pub max_age_days: f64,
     /// Drop roles marked 🎓 (requires MS/PhD) on the Simplify list.
     pub exclude_advanced_degree: bool,
+    /// Fields the user wants ("ml-ai", "software", "data", …; see fields.rs).
+    /// Roles whose titles name only other fields are dropped before scoring.
+    pub target_fields: Vec<String>,
     /// "anywhere" or "us": drop postings that only name places outside the US.
     pub location_scope: String,
     /// Optional places to stay near ("NYC", "TX", "Bay Area"). Remote roles
@@ -118,6 +121,7 @@ impl Default for Config {
             season: default_season(),
             max_age_days: 7.0,
             exclude_advanced_degree: true,
+            target_fields: crate::fields::default_targets(),
             location_scope: "anywhere".into(),
             places: Vec::new(),
             work_authorization: "auto".into(),
@@ -129,7 +133,7 @@ impl Default for Config {
             notify_threshold: 90,
             battery_pause_below: 20,
             prefilter_top: 20,
-            min_score: 60,
+            min_score: 70,
             results_per_scan: 5,
             setup_done: false,
             companies: default_companies(),

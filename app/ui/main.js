@@ -811,6 +811,13 @@ function renderSettings() {
   if (document.activeElement !== el("lookingfor")) el("lookingfor").value = c.looking_for;
 
   for (const b of el("roletypes").children) b.classList.toggle("on", c.role_types.includes(b.dataset.v));
+  renderFieldChips(c);
+  setSeg("strictness", c.min_score);
+  el("strictnesshint").textContent = {
+    60: "Shows strong matches plus close calls from neighboring fields.",
+    70: "Shows roles in your fields that meet a good share of their requirements.",
+    80: "Only roles in your fields that meet most of their requirements.",
+  }[c.min_score] || `Shows roles scoring ${c.min_score} or higher.`;
   if (document.activeElement !== el("season")) el("season").value = c.season;
   setSeg("locscope", c.location_scope);
   if (document.activeElement !== el("places")) el("places").value = (c.places || []).join(", ");
@@ -856,6 +863,25 @@ function renderSettings() {
 
   el("logpath").textContent = settings.applied_log_resolved;
   el("openlog").disabled = !settings.applied_log_exists;
+}
+
+const FIELD_CHIPS = [
+  ["ml-ai", "ML / AI"], ["software", "software"], ["data", "data"], ["hardware", "hardware"],
+  ["quant", "quant"], ["product", "product"], ["business", "business & other"],
+];
+
+function renderFieldChips(c) {
+  const box = el("fieldchips");
+  if (!box.children.length) {
+    for (const [v, label] of FIELD_CHIPS) {
+      const b = document.createElement("button");
+      b.dataset.v = v;
+      b.textContent = label;
+      box.appendChild(b);
+    }
+  }
+  const targets = c.target_fields || [];
+  for (const b of box.children) b.classList.toggle("on", targets.includes(b.dataset.v));
 }
 
 // Every change saves itself shortly after; the footer confirms.
@@ -1008,6 +1034,19 @@ el("locscope").addEventListener("click", (e) => {
 el("workauth").addEventListener("change", (e) => changed((c) => { c.work_authorization = e.target.value; }));
 el("amodel").addEventListener("input", (e) => changed((c) => { c.anthropic_model = e.target.value.trim(); }));
 
+el("fieldchips").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  changed((c) => {
+    const v = b.dataset.v;
+    const t = c.target_fields || [];
+    c.target_fields = t.includes(v) ? t.filter((x) => x !== v) : [...t, v];
+  });
+});
+el("strictness").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.min_score = Number(b.dataset.v); });
+});
 el("roletypes").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;

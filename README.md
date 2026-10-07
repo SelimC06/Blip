@@ -13,7 +13,7 @@ Runs on macOS and Windows.
 - **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, Amazon's own job site, federal internships from [USAJobs](https://www.usajobs.gov) (with a free API key), and the job boards of companies you choose on Greenhouse, Ashby, Lever, Workday, and Oracle Recruiting.
 - **Remembers what it has seen.** It never shows you the same role twice, even when one job is listed on two sites under slightly different titles.
 - **Scores against your resume.** A local model reads each promising posting's full description and gives it a 0–100 match score with a one-line reason and any red flags, like a citizenship requirement or the wrong location.
-- **Shows only what's worth your time.** You get the top five. Roles scoring under 60 are never shown, so an empty panel means nothing good turned up.
+- **Shows only what's worth your time.** You get your top matches (5 by default). Roles outside your chosen fields, or under your strictness bar, are never shown, so an empty panel means nothing good turned up.
 - **Logs your applications to Excel.** Press ✓ on a role and it's added as a row to your spreadsheet. Your own columns and edits are kept.
 - **Filters what you can't apply to.** It can limit roles to the US or to places you choose, and hide roles that need a work authorization you don't have.
 
@@ -59,7 +59,7 @@ You can run setup again any time from **Settings → Log**.
 
 | Tab | What's there |
 |---|---|
-| **Profile** | Your resume, and a "what you're looking for" note that steers the scoring |
+| **Profile** | Your resume, a "what you're looking for" note, the fields you want (ML / AI, software, data, hardware, quant, product, business), and how picky Blip should be (relaxed, normal, strict) |
 | **Search** | Role types (internship, co-op, new grad), season, location (anywhere or US only, plus optional places like `NYC, Seattle, TX`), work authorization, max posting age, skip MS/PhD-only roles |
 | **Cycle** | How often to scan, active hours, pause on low battery, pause automatic scans, start at login, notifications for strong matches |
 | **Model** | Local Ollama model, or the Anthropic API with a key stored in your system keychain |
@@ -74,11 +74,11 @@ Each cycle runs these steps:
 
 1. **Fetch.** Pull current listings from the community lists and every company in your watchlist.
 2. **Dedupe.** Each posting is fingerprinted by company, title, location, and season, and also matched by its job ID on the hiring platform. Anything already seen is skipped.
-3. **Filter.** Drop anything that fails a hard filter: role type, season, posting age, location, an MS/PhD requirement, or a work-authorization requirement stated in the description. These checks are free.
+3. **Filter.** Drop anything that fails a hard filter: a title that's only about fields you didn't pick, role type, season, posting age, location, an MS/PhD requirement, or a work-authorization requirement stated in the description. These checks are free.
 4. **Shortlist.** Compare each remaining posting to your resume using embeddings and keep the 20 closest.
 5. **Read.** Fetch each shortlisted job's page so the model sees the real description. Ashby and Lever include descriptions in their feeds, and Workday and Oracle pages are read through the JSON behind them, since the pages themselves are JavaScript-only.
-6. **Score.** The model scores each role, explains the fit, flags problems, and notes any application deadline the description states.
-7. **Show.** The top five that score 60 or higher appear in the panel. Scores are cached, so a role is never re-scored unless your resume, "looking for" note, or model changes.
+6. **Score.** The model doesn't pick a number. It answers narrow questions: is the role's main work in your fields, which of the posting's requirements you meet, and which you're missing. Blip computes the score from those answers, so a role the model calls off-field can't score high. Roles judged from a title alone are capped unless the title itself names one of your fields.
+7. **Show.** Your top matches above the strictness bar (70 on "normal") appear in the panel. Scores are cached, so a role is never re-scored unless your resume, "looking for" note, or model changes.
 
 **Deadlines.** Job feeds rarely publish deadlines, so Blip uses one only when the posting states it, or when the board lists it (some Greenhouse companies do). Roles closing within a week are flagged, and you get one reminder three days out.
 

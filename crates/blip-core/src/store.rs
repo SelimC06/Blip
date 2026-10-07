@@ -480,6 +480,34 @@ impl Store {
         Ok(())
     }
 
+    /// Roles already shown to the user with their old score — for comparing
+    /// scoring changes (`blip rescore`).
+    pub fn shown_with_scores(&self) -> Result<Vec<(Posting, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT company, title, location, url, source, season, posted, description,
+                    COALESCE(deadline, ''), score
+             FROM postings WHERE status IN ('surfaced', 'applied', 'dismissed') AND score IS NOT NULL
+             ORDER BY score DESC",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                Posting {
+                    company: r.get(0)?,
+                    title: r.get(1)?,
+                    location: r.get(2)?,
+                    url: r.get(3)?,
+                    source: r.get(4)?,
+                    season: r.get(5)?,
+                    posted: r.get(6)?,
+                    description: r.get(7)?,
+                    deadline: r.get(8)?,
+                },
+                r.get(9)?,
+            ))
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     pub fn total_postings(&self) -> Result<i64> {
         Ok(self
             .conn
