@@ -5,18 +5,6 @@ use crate::model::Posting;
 use anyhow::Result;
 use regex::Regex;
 
-// Ramp/OpenAI/Notion use Ashby, not Greenhouse — see sources/ashby.rs.
-pub const WATCHLIST: &[(&str, &str)] = &[
-    ("stripe", "Stripe"),
-    ("datadog", "Datadog"),
-    ("databricks", "Databricks"),
-    ("duolingo", "Duolingo"),
-    ("figma", "Figma"),
-    ("cloudflare", "Cloudflare"),
-    ("robinhood", "Robinhood"),
-    ("discord", "Discord"),
-];
-
 pub fn fetch_board(
     client: &reqwest::blocking::Client,
     board: &str,

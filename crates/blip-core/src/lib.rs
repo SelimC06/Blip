@@ -28,7 +28,11 @@ pub fn http_client() -> Result<reqwest::blocking::Client> {
 /// never-seen-before postings. A failing source is recorded in
 /// `report.sources` / `report.errors` instead of aborting the cycle.
 /// `cancelled` is polled between sources.
-pub fn run_scan(store: &Store, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<ScanReport> {
+pub fn run_scan(
+    store: &Store,
+    cfg: &config::Config,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<ScanReport> {
     let client = http_client()?;
     let mut report = ScanReport::default();
     let mut all = Vec::new();
@@ -47,26 +51,14 @@ pub fn run_scan(store: &Store, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<
         }
     };
 
-    record("github:simplify".into(), sources::simplify::fetch(&client), &mut all);
-    for (board, company) in sources::greenhouse::WATCHLIST {
-        if cancelled() {
-            return Err(Cancelled.into());
-        }
-        record(
-            format!("greenhouse:{board}"),
-            sources::greenhouse::fetch_board(&client, board, company),
-            &mut all,
-        );
+    if cfg.use_simplify {
+        record("github:simplify".into(), sources::simplify::fetch(&client), &mut all);
     }
-    for (board, company) in sources::ashby::WATCHLIST {
+    for company in &cfg.companies {
         if cancelled() {
             return Err(Cancelled.into());
         }
-        record(
-            format!("ashby:{board}"),
-            sources::ashby::fetch_board(&client, board, company),
-            &mut all,
-        );
+        record(company.source_name(), sources::fetch_company(&client, company), &mut all);
     }
 
     report.scanned = all.len();

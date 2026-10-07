@@ -228,14 +228,29 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
    only clipped so the sliding sections don't spill sideways mid-switch. */
 .panes { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 
-/* Source health: two compact columns of status dots. */
-.sources { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
-.src { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 10px; color: var(--dim); }
-.src i { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--phosphor); box-shadow: 0 0 5px rgba(237, 230, 214, .45); }
-.src.bad i { background: var(--red); box-shadow: 0 0 5px rgba(248, 113, 113, .5); }
-.src.bad { color: var(--red); }
-.src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.src b { font-weight: 400; font-variant-numeric: tabular-nums; }
+/* Company watchlist: wrapping chips, each with health dot, count, remove. */
+.cos { display: flex; flex-wrap: wrap; gap: 5px; }
+.co {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 3px 0 8px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  font-size: 10.5px; color: var(--phosphor); max-width: 100%;
+}
+.co i { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--dim); }
+.co.ok i { background: var(--phosphor); box-shadow: 0 0 5px rgba(237, 230, 214, .45); }
+.co.bad { border-color: rgba(248, 113, 113, .45); }
+.co.bad i { background: var(--red); box-shadow: 0 0 5px rgba(248, 113, 113, .5); }
+.co span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co small { color: var(--dim); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+.co button {
+  width: 18px; height: 18px; border-radius: 50%; border: 0; background: transparent;
+  color: var(--dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s, background .15s;
+}
+.co button svg { width: 9px; height: 9px; }
+.co button:hover { color: var(--red); background: rgba(248, 113, 113, .14); }
+.co.added { animation: chipin .35s cubic-bezier(.34, 1.4, .44, 1); }
+@keyframes chipin { from { transform: scale(.6); opacity: 0; } }
+.stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 
 /* ---------- first-run setup ---------- */
 .stepdots { display: flex; gap: 5px; align-items: center; }
@@ -346,5 +361,6 @@ select {
 @media (prefers-reduced-motion: reduce) {
   #surface[data-status="scanning"] .sdot::after { animation: none; }
   .seg-ind, .stepdots i, .progress i { transition: none; }
+  .co.added { animation: none; }
   .state.checking i { animation: none; }
 }

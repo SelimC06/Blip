@@ -2,9 +2,49 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// User settings. Written as JSON next to the DB; the Phase 3 settings UI
-/// edits this same file. API keys never live here — ANTHROPIC_API_KEY env
-/// for now, Keychain/Credential Manager in Phase 3.
+/// One company job board Blip reads directly.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CompanyEntry {
+    /// "greenhouse" | "ashby" | "lever"
+    pub platform: String,
+    /// The board's slug on that platform, e.g. "stripe".
+    pub board: String,
+    /// Display name, used as the posting's company.
+    pub name: String,
+}
+
+impl CompanyEntry {
+    fn new(platform: &str, board: &str, name: &str) -> Self {
+        CompanyEntry { platform: platform.into(), board: board.into(), name: name.into() }
+    }
+
+    /// Matches the source names used in source health ("greenhouse:stripe").
+    pub fn source_name(&self) -> String {
+        format!("{}:{}", self.platform, self.board)
+    }
+}
+
+pub fn default_companies() -> Vec<CompanyEntry> {
+    vec![
+        CompanyEntry::new("greenhouse", "stripe", "Stripe"),
+        CompanyEntry::new("greenhouse", "datadog", "Datadog"),
+        CompanyEntry::new("greenhouse", "databricks", "Databricks"),
+        CompanyEntry::new("greenhouse", "duolingo", "Duolingo"),
+        CompanyEntry::new("greenhouse", "figma", "Figma"),
+        CompanyEntry::new("greenhouse", "cloudflare", "Cloudflare"),
+        CompanyEntry::new("greenhouse", "robinhood", "Robinhood"),
+        CompanyEntry::new("greenhouse", "discord", "Discord"),
+        CompanyEntry::new("ashby", "ramp", "Ramp"),
+        CompanyEntry::new("ashby", "openai", "OpenAI"),
+        CompanyEntry::new("ashby", "notion", "Notion"),
+        CompanyEntry::new("ashby", "plaid", "Plaid"),
+        CompanyEntry::new("ashby", "linear", "Linear"),
+        CompanyEntry::new("lever", "palantir", "Palantir"),
+    ]
+}
+
+/// User settings. Written as JSON next to the DB; the settings UI edits this
+/// same file. API keys never live here: they're in the OS credential store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -45,6 +85,10 @@ pub struct Config {
     pub min_score: u8,
     /// First-run setup finished (or skipped by an existing install).
     pub setup_done: bool,
+    /// Company job boards read directly every cycle.
+    pub companies: Vec<CompanyEntry>,
+    /// Read the SimplifyJobs community list (most of Blip's postings).
+    pub use_simplify: bool,
     /// "ollama" (default, local) or "anthropic" (API key required).
     pub backend: String,
     pub ollama_url: String,
@@ -75,6 +119,8 @@ impl Default for Config {
             prefilter_top: 20,
             min_score: 60,
             setup_done: false,
+            companies: default_companies(),
+            use_simplify: true,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),

@@ -6,14 +6,6 @@ use crate::model::Posting;
 use anyhow::Result;
 use regex::Regex;
 
-pub const WATCHLIST: &[(&str, &str)] = &[
-    ("ramp", "Ramp"),
-    ("openai", "OpenAI"),
-    ("notion", "Notion"),
-    ("plaid", "Plaid"),
-    ("linear", "Linear"),
-];
-
 pub fn fetch_board(
     client: &reqwest::blocking::Client,
     board: &str,

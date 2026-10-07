@@ -352,6 +352,17 @@ fn open_applied_log() -> Result<(), String> {
     tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Look up a company from a name or careers link and verify its board.
+#[tauri::command]
+async fn find_company(query: String) -> Result<blip_core::sources::Found, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = blip_core::http_client().map_err(|e| e.to_string())?;
+        blip_core::sources::find_company(&client, &query).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Installed Ollama models, so the Model tab can offer a real list.
 #[tauri::command]
 async fn list_models() -> Result<Vec<String>, String> {
@@ -439,7 +450,7 @@ fn run_cycle(app: &AppHandle, shared: &Shared) {
         let llm = Llm::new(&cfg)?;
         let prof = profile::load_or_build(&llm, &cfg)?;
 
-        let report = blip_core::run_scan(&store, &cancelled)?;
+        let report = blip_core::run_scan(&store, &cfg, &cancelled)?;
         let candidates = store.unsurfaced(&score::score_key(&cfg, &prof))?;
         let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, TOP_N, &cancelled)?;
         store.mark_surfaced(
@@ -647,6 +658,7 @@ pub fn run() {
             rebuild_profile,
             pick_applied_log,
             open_applied_log,
+            find_company,
             list_models,
             open_link,
             quit_app,
@@ -661,11 +673,18 @@ pub fn run() {
             // surface sits 16px inside the canvas, so the pill lands ~20px
             // from the screen edge.
             if let Some(win) = app.get_webview_window("main") {
-                if let (Ok(Some(mon)), Ok(size)) = (win.current_monitor(), win.outer_size()) {
-                    let scale = win.scale_factor().unwrap_or(1.0);
+                if let Ok(Some(mon)) = win.current_monitor() {
+                    let scale = mon.scale_factor();
+                    // The canvas is transparent and click-through, so make it
+                    // as tall as the screen allows: settings never scroll, and
+                    // the tallest card (a long company list) still fits.
+                    let screen_h = mon.size().height as f64 / scale;
+                    let height = (screen_h - 32.0 - 24.0).clamp(540.0, 1100.0);
+                    let _ = win.set_size(tauri::LogicalSize::new(WIN_W, height));
                     let pad = (4.0 * scale) as i32;
                     let top = (32.0 * scale) as i32;
-                    let x = mon.position().x + mon.size().width as i32 - size.width as i32 - pad;
+                    let width = (WIN_W * scale).round() as i32;
+                    let x = mon.position().x + mon.size().width as i32 - width - pad;
                     let y = mon.position().y + top;
                     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
                 }

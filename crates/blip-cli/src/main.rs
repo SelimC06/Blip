@@ -4,10 +4,14 @@ use blip_core::{config, llm::Llm, profile, score};
 
 const USAGE: &str = "usage:
   blip scan [--top N] [--limit N] [--db PATH]   run a cycle; --top scores and ranks
-  blip profile --resume PATH                    set resume and (re)build the profile";
+  blip profile --resume PATH                    set resume and (re)build the profile
+  blip find <company name or careers link>      look up a company's job board";
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("find") {
+        return cmd_find(&args[1..].join(" "));
+    }
     let mut cmd = "scan";
     let mut db_path = default_db_path();
     let mut limit: usize = 25;
@@ -33,6 +37,14 @@ fn main() -> Result<()> {
     }
 }
 
+fn cmd_find(query: &str) -> Result<()> {
+    let client = blip_core::http_client()?;
+    let found = blip_core::sources::find_company(&client, query)?;
+    let e = &found.entry;
+    println!("{} — {} board \"{}\" · {} early-career roles open", e.name, e.platform, e.board, found.roles);
+    Ok(())
+}
+
 fn cmd_profile(resume: Option<String>) -> Result<()> {
     let mut cfg = config::load_or_create()?;
     if let Some(path) = resume {
@@ -52,7 +64,7 @@ fn cmd_scan(db_path: std::path::PathBuf, limit: usize, top: Option<usize>) -> Re
     let cfg = config::load_or_create()?;
     println!("blip scan · db: {}", db_path.display());
 
-    let report = blip_core::run_scan(&store, &|| false)?;
+    let report = blip_core::run_scan(&store, &cfg, &|| false)?;
     for err in &report.errors {
         eprintln!("  ⚠ {err}");
     }

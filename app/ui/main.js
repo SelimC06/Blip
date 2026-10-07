@@ -411,26 +411,92 @@ async function loadSettings() {
   renderSettings();
 }
 
+let justAdded = null; // source name of the chip to pop in
+
+// Company chips: health from the last scan, roles found, and remove.
 function renderSources() {
-  const box = el("sources");
+  if (!settings) return;
+  const c = settings.config;
+  const health = Object.fromEntries(sources.map((s) => [s.name, s]));
+
+  el("usesimplify").classList.toggle("on", c.use_simplify);
+  el("usesimplify").setAttribute("aria-checked", c.use_simplify);
+  const sh = health["github:simplify"];
+  el("simplifyhint").textContent = !c.use_simplify
+    ? "Off. Only the companies below are read."
+    : sh && !sh.ok ? `Down on the last scan: ${sh.error}`
+    : sh ? `${sh.count} roles last scan, across hundreds of companies.`
+    : "Community list of internships across hundreds of companies.";
+
+  const box = el("companies");
   box.textContent = "";
-  if (!sources.length) {
-    box.textContent = "Checked on the next scan.";
-    box.className = "sources fhint";
+  el("cocount").textContent = c.companies.length ? `${c.companies.length} watched` : "";
+  if (!c.companies.length) {
+    box.textContent = "None yet. Add the companies you most want to work for.";
+    box.className = "cos fhint";
     return;
   }
-  box.className = "sources";
-  for (const s of sources) {
-    const row = document.createElement("div");
-    row.className = s.ok ? "src" : "src bad";
-    row.title = s.ok ? `${s.count} matching roles last scan` : s.error;
+  box.className = "cos";
+  for (const co of c.companies) {
+    const key = `${co.platform}:${co.board}`;
+    const h = health[key];
+    const chip = document.createElement("span");
+    chip.className = "co" + (h ? (h.ok ? " ok" : " bad") : "") + (key === justAdded ? " added" : "");
+    chip.title = h
+      ? (h.ok ? `${co.platform} · ${h.count} early-career roles last scan` : `${co.platform} · down: ${h.error}`)
+      : `${co.platform} · checked on the next scan`;
     const dot = document.createElement("i");
     const name = document.createElement("span");
-    name.textContent = s.name.replace(/^(github|greenhouse|ashby):/, "");
-    const n = document.createElement("b");
-    n.textContent = s.ok ? s.count : "down";
-    row.append(dot, name, n);
-    box.appendChild(row);
+    name.textContent = co.name;
+    chip.append(dot, name);
+    if (h?.ok) {
+      const n = document.createElement("small");
+      n.textContent = h.count;
+      chip.appendChild(n);
+    }
+    const rm = document.createElement("button");
+    rm.title = `Stop watching ${co.name}`;
+    rm.setAttribute("aria-label", `Remove ${co.name}`);
+    rm.innerHTML = ICONS.cross;
+    rm.onclick = () => {
+      changed((cfg) => { cfg.companies = cfg.companies.filter((x) => `${x.platform}:${x.board}` !== key); });
+      refit();
+    };
+    chip.appendChild(rm);
+    box.appendChild(chip);
+  }
+  justAdded = null;
+}
+
+async function addCompany() {
+  const input = el("addco");
+  const hint = el("addhint");
+  const query = input.value.trim();
+  if (!query) return;
+  el("addbtn").disabled = true;
+  hint.className = "fhint";
+  hint.textContent = `Looking for ${query}…`;
+  try {
+    const found = await invoke("find_company", { query });
+    const e = found.entry;
+    const key = `${e.platform}:${e.board}`;
+    if (settings.config.companies.some((x) => `${x.platform}:${x.board}` === key)) {
+      hint.textContent = `Already watching ${e.name}.`;
+    } else {
+      justAdded = key;
+      changed((cfg) => { cfg.companies = [...cfg.companies, e]; });
+      input.value = "";
+      hint.className = "fhint ok";
+      hint.textContent = found.roles
+        ? `Added ${e.name} (${e.platform}): ${found.roles} early-career role${found.roles === 1 ? "" : "s"} open now.`
+        : `Added ${e.name} (${e.platform}). No early-career roles open right now; Blip will keep checking.`;
+    }
+  } catch (err) {
+    hint.className = "fhint bad";
+    hint.textContent = String(err);
+  } finally {
+    el("addbtn").disabled = false;
+    refit();
   }
 }
 
@@ -518,7 +584,7 @@ function flashSaved(text, bad = false) {
   savedTimer = setTimeout(() => { s.style.opacity = 0; }, bad ? 5000 : 1400);
 }
 
-const TAB_ORDER = ["profile", "search", "cycle", "model", "log"];
+const TAB_ORDER = ["profile", "search", "cycle", "model", "sources", "log"];
 
 function moveTabIndicator(instant = false) {
   const btn = el("tabs").querySelector(`button[data-tab="${activeTab}"]`);
@@ -677,6 +743,9 @@ el("autostart").addEventListener("click", async () => {
     flashSaved(autostart ? "starts at login" : "won't start at login");
   } catch (err) { flashSaved(`couldn't change: ${err}`, true); }
 });
+el("usesimplify").addEventListener("click", () => changed((c) => { c.use_simplify = !c.use_simplify; }));
+el("addbtn").addEventListener("click", addCompany);
+el("addco").addEventListener("keydown", (e) => { if (e.key === "Enter") addCompany(); });
 el("exportweek").addEventListener("click", async () => {
   try {
     const path = await invoke("export_week");

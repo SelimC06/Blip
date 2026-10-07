@@ -51,6 +51,7 @@
       <button role="tab" data-tab="search">search</button>
       <button role="tab" data-tab="cycle">cycle</button>
       <button role="tab" data-tab="model">model</button>
+      <button role="tab" data-tab="sources">sources</button>
       <button role="tab" data-tab="log">log</button>
     </div>
 
@@ -181,6 +182,28 @@
       </div>
     </section>
 
+    <section class="pane" data-pane="sources" hidden>
+      <div class="field frow">
+        <div class="stack">
+          <span class="flabel">SimplifyJobs list</span>
+          <span class="fhint" id="simplifyhint">Community list of internships across hundreds of companies.</span>
+        </div>
+        <button class="switch" id="usesimplify" role="switch" aria-label="Read the SimplifyJobs list"><span></span></button>
+      </div>
+      <div class="field">
+        <div class="fhead"><span class="flabel">companies</span><span class="rval" id="cocount"></span></div>
+        <div class="cos" id="companies"></div>
+      </div>
+      <div class="field">
+        <label class="flabel" for="addco">add a company</label>
+        <div class="inline">
+          <input id="addco" type="text" spellcheck="false" autocomplete="off" placeholder="name, or link to its careers page">
+          <button class="btn accent" id="addbtn">add</button>
+        </div>
+        <div class="fhint" id="addhint">Works with companies hiring on Greenhouse, Ashby, or Lever. Blip checks the board before adding it.</div>
+      </div>
+    </section>
+
     <section class="pane" data-pane="log" hidden>
       <div class="field">
         <div class="fhead"><span class="flabel">applied log</span>
@@ -196,10 +219,6 @@
       <div class="field frow">
         <span class="flabel">first-run setup</span>
         <button class="btn" id="rerunsetup">run again</button>
-      </div>
-      <div class="field">
-        <span class="flabel">sources</span>
-        <div class="sources" id="sources"></div>
       </div>
     </section>
     </div>
