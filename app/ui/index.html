@@ -24,6 +24,7 @@
     <header>
       <span class="label">top matches</span>
       <div class="hbtns">
+        <button class="btn icon histopen" title="History" aria-label="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><polyline points="3 4 3 9 8 9"></polyline><polyline points="12 7 12 12 15.5 14"></polyline></svg></button>
         <button class="btn" id="openall" title="Open all in browser">open all</button>
         <button class="btn" id="minbtn" title="Back to pill">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
@@ -40,6 +41,7 @@
       <span class="label">settings</span>
       <div class="hbtns">
         <button class="btn accent" id="scannow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>scan now</button>
+        <button class="btn icon histopen" title="History" aria-label="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><polyline points="3 4 3 9 8 9"></polyline><polyline points="12 7 12 12 15.5 14"></polyline></svg></button>
         <button class="btn" id="setclose">close</button>
       </div>
     </header>
@@ -226,6 +228,27 @@
     <footer class="setfoot">
       <span id="savedtxt"></span>
       <button class="btn danger" id="quitbtn">quit blip</button>
+    </footer>
+  </div>
+
+  <!-- History: everything Blip has shown you, what you applied to, and what you dismissed. -->
+  <div class="layer card" id="historyLayer">
+    <header>
+      <span class="label">history</span>
+      <div class="hbtns">
+        <button class="btn" id="histback">back</button>
+        <button class="btn" id="histclose">close</button>
+      </div>
+    </header>
+    <div class="seg tabs" id="histseg">
+      <button data-v="shown" class="on">shown</button>
+      <button data-v="applied">applied</button>
+      <button data-v="dismissed">dismissed</button>
+    </div>
+    <div id="histlist"></div>
+    <footer class="setfoot">
+      <span id="histcount"></span>
+      <button class="btn" id="histmore" hidden>show more</button>
     </footer>
   </div>
 

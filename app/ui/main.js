@@ -5,7 +5,7 @@ const { listen } = window.__TAURI__.event;
 
 const el = (id) => document.getElementById(id);
 const surface = el("surface");
-const LAYERS = { pill: el("pillLayer"), panel: el("panelLayer"), settings: el("setLayer"), setup: el("setupLayer") };
+const LAYERS = { pill: el("pillLayer"), panel: el("panelLayer"), settings: el("setLayer"), setup: el("setupLayer"), history: el("historyLayer") };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -382,6 +382,178 @@ el("minbtn").addEventListener("click", () => setView("pill"));
 el("scannow").addEventListener("click", () => { invoke("scan_now").catch(() => {}); setView("pill"); });
 el("pausebtn").addEventListener("click", () => invoke("toggle_pause").catch(() => {}));
 el("quitbtn").addEventListener("click", () => invoke("quit_app").catch(() => {}));
+// ---------- history ----------
+
+let histKind = "shown";
+let histRows = [];
+let histCounts = { shown: 0, applied: 0, dismissed: 0 };
+let histFrom = "pill"; // the card "back" returns to
+
+const DAY_MS = 86400000;
+// Stored times are UTC "YYYY-MM-DD HH:MM:SS".
+const parseUtc = (s) => (s ? new Date(s.replace(" ", "T") + "Z") : null);
+function dayLabel(d) {
+  if (!d) return "Earlier";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / DAY_MS);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return day.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(day.getFullYear() !== today.getFullYear() && { year: "numeric" }) });
+}
+const timeLabel = (d) => d ? d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+
+async function openHistory() {
+  histFrom = view === "pill" ? "pill" : view;
+  el("histback").hidden = histFrom === "pill";
+  await loadHistory(histKind, false);
+  setView("history");
+}
+
+async function loadHistory(kind, append) {
+  try {
+    const page = await invoke("get_history", { kind, offset: append ? histRows.length : 0 });
+    histKind = kind;
+    histRows = append ? histRows.concat(page.rows) : page.rows;
+    histCounts = page.counts;
+  } catch (err) {
+    histRows = [];
+    el("histcount").textContent = String(err);
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  for (const b of el("histseg").children) {
+    const v = b.dataset.v;
+    b.classList.toggle("on", v === histKind);
+    b.innerHTML = `${v}<b>${histCounts[v] ?? 0}</b>`;
+  }
+  const list = el("histlist");
+  list.textContent = "";
+  const total = histCounts[histKind] || 0;
+  if (!histRows.length) {
+    const empty = document.createElement("div");
+    empty.className = "hempty";
+    empty.textContent = {
+      shown: "Roles Blip has shown you will collect here, so you can come back to them.",
+      applied: "Nothing yet. Press ✓ on a match to log it here and in your spreadsheet.",
+      dismissed: "Nothing dismissed. Roles you ✕ land here, and you can restore them.",
+    }[histKind];
+    list.appendChild(empty);
+  }
+  let lastDay = null;
+  for (const r of histRows) {
+    const at = parseUtc(r.at);
+    const day = dayLabel(at);
+    if (day !== lastDay) {
+      const h = document.createElement("div");
+      h.className = "hday";
+      h.textContent = day;
+      list.appendChild(h);
+      lastDay = day;
+    }
+    list.appendChild(historyRow(r, at));
+  }
+  el("histcount").textContent = total ? `${histRows.length} of ${total}` : "";
+  el("histmore").hidden = histRows.length >= total;
+  if (view === "history") refit();
+}
+
+function historyRow(r, at) {
+  const row = document.createElement("div");
+  row.className = "hrow";
+
+  const score = document.createElement("span");
+  score.className = r.score >= 90 ? "score hot" : "score";
+  score.textContent = r.score ?? "–";
+
+  const main = document.createElement("div");
+  main.className = "jmain";
+  const title = document.createElement("div");
+  title.className = "jtitle";
+  title.textContent = r.title;
+  title.title = r.reason || "Open posting";
+  title.onclick = () => invoke("open_link", { url: r.url }).catch(() => {});
+  const meta = document.createElement("div");
+  meta.className = "jmeta";
+  const verb = { shown: "shown", applied: "applied", dismissed: "dismissed" }[histKind];
+  meta.textContent = [r.company, r.location, at && `${verb} ${timeLabel(at)}`].filter(Boolean).join(" · ");
+  main.append(title, meta);
+
+  const acts = document.createElement("div");
+  acts.className = "acts";
+  if (histKind === "shown") {
+    const yes = document.createElement("button");
+    yes.className = "yes";
+    yes.title = "Applied — log it";
+    yes.setAttribute("aria-label", "Mark applied");
+    yes.innerHTML = ICONS.check;
+    yes.onclick = async () => {
+      const job = {
+        fingerprint: r.fingerprint, score: r.score ?? 0, reason: r.reason, red_flags: [],
+        company: r.company, title: r.title, location: r.location, url: r.url,
+        posted: humanAge(r.posted), deadline: r.deadline,
+      };
+      try {
+        const file = await invoke("mark_applied", { job });
+        row.classList.add("gone");
+        el("histcount").textContent = `added to ${file}`;
+        setTimeout(() => loadHistory(histKind, false), 900);
+      } catch (err) {
+        el("histcount").textContent = String(err);
+      }
+    };
+    const no = document.createElement("button");
+    no.className = "no";
+    no.title = "Dismiss — never show again";
+    no.setAttribute("aria-label", "Dismiss");
+    no.innerHTML = ICONS.cross;
+    no.onclick = async () => {
+      await invoke("dismiss_job", { fingerprint: r.fingerprint }).catch(() => {});
+      row.classList.add("gone");
+      setTimeout(() => loadHistory(histKind, false), 500);
+    };
+    acts.append(yes, no);
+  } else if (histKind === "dismissed") {
+    const undo = document.createElement("button");
+    undo.className = "btn";
+    undo.textContent = "restore";
+    undo.title = "Move back to Shown";
+    undo.onclick = async () => {
+      await invoke("restore_job", { fingerprint: r.fingerprint }).catch(() => {});
+      row.classList.add("gone");
+      setTimeout(() => loadHistory(histKind, false), 500);
+    };
+    acts.append(undo);
+  }
+
+  row.append(score, main, acts);
+  return row;
+}
+
+// "2026-10-01T…" / "0d" → "today" / "5 d ago", matching the results panel.
+function humanAge(posted) {
+  const p = (posted || "").trim();
+  const m = p.match(/^(\d+)\s*(h|d|w|mo)$/);
+  let days = m ? { h: +m[1] / 24, d: +m[1], w: +m[1] * 7, mo: +m[1] * 30 }[m[2]] : null;
+  if (days == null && /^\d{4}-\d{2}-\d{2}/.test(p)) days = (Date.now() - new Date(p.slice(0, 10))) / DAY_MS;
+  if (days == null) return "";
+  return days < 1 ? "today" : days < 2 ? "1 d ago" : days < 30 ? `${Math.floor(days)} d ago` : `${Math.floor(days / 30)} mo ago`;
+}
+
+for (const b of document.querySelectorAll(".histopen")) b.addEventListener("click", openHistory);
+el("histseg").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b && b.dataset.v !== histKind) loadHistory(b.dataset.v, false).then(refit);
+});
+el("histmore").addEventListener("click", () => loadHistory(histKind, true).then(refit));
+el("histback").addEventListener("click", async () => {
+  if (histFrom === "settings") await loadSettings();
+  setView(histFrom);
+});
+el("histclose").addEventListener("click", () => setView("pill"));
+
 el("openall").addEventListener("click", () => {
   for (const j of state.results) invoke("open_link", { url: j.url }).catch(() => {});
 });

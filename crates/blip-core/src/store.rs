@@ -29,7 +29,33 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE postings ADD COLUMN red_flags TEXT",
     "ALTER TABLE postings ADD COLUMN score_key TEXT",
     "ALTER TABLE postings ADD COLUMN auth_req TEXT",
+    "ALTER TABLE postings ADD COLUMN dismissed_at TEXT",
 ];
+
+/// One row of the history view.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct HistoryRow {
+    pub fingerprint: String,
+    pub company: String,
+    pub title: String,
+    pub location: String,
+    pub url: String,
+    pub posted: String,
+    pub deadline: String,
+    pub score: Option<i64>,
+    pub reason: String,
+    pub status: String,
+    /// When it happened for this view (shown, applied, or dismissed), UTC
+    /// "YYYY-MM-DD HH:MM:SS", or "" for rows from before timestamps existed.
+    pub at: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct HistoryCounts {
+    pub shown: i64,
+    pub applied: i64,
+    pub dismissed: i64,
+}
 
 #[derive(Debug, Clone)]
 pub struct Reminder {
@@ -271,7 +297,8 @@ impl Store {
     pub fn set_status(&self, fingerprint: &str, status: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE postings SET status = ?2,
-                applied_at = CASE WHEN ?2 = 'applied' THEN datetime('now') ELSE applied_at END
+                applied_at = CASE WHEN ?2 = 'applied' THEN datetime('now') ELSE applied_at END,
+                dismissed_at = CASE WHEN ?2 = 'dismissed' THEN datetime('now') ELSE dismissed_at END
              WHERE fingerprint = ?1",
             params![fingerprint, status],
         )?;
@@ -392,6 +419,67 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
+    /// "shown" = surfaced and not acted on; "applied"; "dismissed". Newest
+    /// first; rows from before timestamps existed sort last.
+    pub fn history(&self, kind: &str, limit: i64, offset: i64) -> Result<Vec<HistoryRow>> {
+        let (status, at) = match kind {
+            "applied" => ("applied", "COALESCE(applied_at, surfaced_at, '')"),
+            "dismissed" => ("dismissed", "COALESCE(dismissed_at, surfaced_at, '')"),
+            _ => ("surfaced", "COALESCE(surfaced_at, '')"),
+        };
+        let sql = format!(
+            "SELECT fingerprint, company, title, location, url, posted, COALESCE(deadline, ''),
+                    score, COALESCE(reason, ''), status, {at} AS at
+             FROM postings WHERE status = ?1
+             ORDER BY at = '' , at DESC, score DESC
+             LIMIT ?2 OFFSET ?3"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![status, limit, offset], |r| {
+            Ok(HistoryRow {
+                fingerprint: r.get(0)?,
+                company: r.get(1)?,
+                title: r.get(2)?,
+                location: r.get(3)?,
+                url: r.get(4)?,
+                posted: r.get(5)?,
+                deadline: r.get(6)?,
+                score: r.get(7)?,
+                reason: r.get(8)?,
+                status: r.get(9)?,
+                at: r.get(10)?,
+            })
+        })?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn history_counts(&self) -> Result<HistoryCounts> {
+        let mut counts = HistoryCounts::default();
+        let mut stmt = self.conn.prepare(
+            "SELECT status, COUNT(*) FROM postings
+             WHERE status IN ('surfaced', 'applied', 'dismissed') GROUP BY status",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        for (status, n) in rows.flatten() {
+            match status.as_str() {
+                "surfaced" => counts.shown = n,
+                "applied" => counts.applied = n,
+                _ => counts.dismissed = n,
+            }
+        }
+        Ok(counts)
+    }
+
+    /// Undo a dismissal: back to "shown", so it can be applied to later.
+    pub fn restore(&self, fingerprint: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE postings SET status = 'surfaced', dismissed_at = NULL
+             WHERE fingerprint = ?1 AND status = 'dismissed'",
+            params![fingerprint],
+        )?;
+        Ok(())
+    }
+
     pub fn total_postings(&self) -> Result<i64> {
         Ok(self
             .conn
@@ -449,6 +537,36 @@ mod tests {
         let rows = store.unsurfaced("k").unwrap();
         assert_eq!(rows[0].0.posted, "2026-08-01T00:00:00Z");
         assert_eq!(rows[0].0.deadline, "2026-10-14");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn history_tracks_shown_applied_dismissed_and_restore() {
+        let (store, dir) = temp_store("history");
+        let a = posting("Acme", "Intern A", "NYC", "https://x.test/a");
+        let b = posting("Bolt", "Intern B", "SF", "https://x.test/b");
+        let c = posting("Core", "Intern C", "LA", "https://x.test/c");
+        for p in [&a, &b, &c] {
+            store.insert_if_new(p).unwrap();
+        }
+        store.mark_surfaced(&[a.fingerprint(), b.fingerprint(), c.fingerprint()]).unwrap();
+        store.set_status(&b.fingerprint(), "applied").unwrap();
+        store.set_status(&c.fingerprint(), "dismissed").unwrap();
+
+        let n = store.history_counts().unwrap();
+        assert_eq!((n.shown, n.applied, n.dismissed), (1, 1, 1));
+        assert_eq!(store.history("shown", 10, 0).unwrap()[0].company, "Acme");
+        let applied = store.history("applied", 10, 0).unwrap();
+        assert_eq!(applied[0].company, "Bolt");
+        assert!(!applied[0].at.is_empty(), "applied rows carry when it happened");
+        assert_eq!(store.history("dismissed", 10, 0).unwrap()[0].company, "Core");
+
+        store.restore(&c.fingerprint()).unwrap();
+        let n = store.history_counts().unwrap();
+        assert_eq!((n.shown, n.applied, n.dismissed), (2, 1, 0));
+        // Restore only undoes dismissals; it never touches applied roles.
+        store.restore(&b.fingerprint()).unwrap();
+        assert_eq!(store.history_counts().unwrap().applied, 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 

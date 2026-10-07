@@ -352,6 +352,32 @@ fn open_applied_log() -> Result<(), String> {
     tauri_plugin_opener::open_path(&path, None::<&str>).map_err(|e| e.to_string())
 }
 
+#[derive(Serialize)]
+struct HistoryPage {
+    rows: Vec<blip_core::store::HistoryRow>,
+    counts: blip_core::store::HistoryCounts,
+}
+
+const HISTORY_PAGE: i64 = 25;
+
+/// One page of history ("shown" | "applied" | "dismissed"), newest first.
+#[tauri::command]
+fn get_history(kind: String, offset: i64) -> Result<HistoryPage, String> {
+    let store = Store::open(&default_db_path()).map_err(|e| e.to_string())?;
+    Ok(HistoryPage {
+        rows: store.history(&kind, HISTORY_PAGE, offset.max(0)).map_err(|e| e.to_string())?,
+        counts: store.history_counts().map_err(|e| e.to_string())?,
+    })
+}
+
+/// Undo a dismissal from the history view.
+#[tauri::command]
+fn restore_job(fingerprint: String) -> Result<(), String> {
+    Store::open(&default_db_path())
+        .and_then(|s| s.restore(&fingerprint))
+        .map_err(|e| e.to_string())
+}
+
 /// Look up a company from a name or careers link and verify its board.
 #[tauri::command]
 async fn find_company(query: String) -> Result<blip_core::sources::Found, String> {
@@ -658,6 +684,8 @@ pub fn run() {
             rebuild_profile,
             pick_applied_log,
             open_applied_log,
+            get_history,
+            restore_job,
             find_company,
             list_models,
             open_link,
