@@ -19,6 +19,9 @@ static DEADLINE_MENTION: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 static RELATIVE_AGE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\s*(h|d|w|mo)$").unwrap());
+static ADVANCED_DEGREE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(\bph\.?\s?d\b|\bdoctoral\b|\bmaster'?s\b|\bmba\b|\bm\.?s\.?\s*/\s*ph\.?d\b|\bpost-?doc)").unwrap()
+});
 static ROLE_INTERNSHIP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bintern(ship)?s?\b").unwrap());
 static ROLE_COOP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bco-? ?op\b").unwrap());
 static ROLE_NEW_GRAD: LazyLock<Regex> =
@@ -101,8 +104,9 @@ pub fn effective_authorization(cfg: &Config, profile: &Profile) -> String {
 }
 
 pub fn hard_filter(cfg: &Config, p: &Posting, authorization: &str) -> bool {
-    // 🎓 on the Simplify list = advanced degree (MS/PhD) required.
-    if cfg.exclude_advanced_degree && p.title.contains('\u{1F393}') {
+    // 🎓 on the community lists, or spelled out in the title by company
+    // boards ("… Intern (PhD)", "Master's Intern") = advanced degree required.
+    if cfg.exclude_advanced_degree && (p.title.contains('\u{1F393}') || ADVANCED_DEGREE.is_match(&p.title)) {
         return false;
     }
     if !location::in_scope(&p.location, &cfg.location_scope)
@@ -344,6 +348,17 @@ mod tests {
 
     fn in_days(n: i64) -> String {
         (Local::now().date_naive() + chrono::Duration::days(n)).format("%Y-%m-%d").to_string()
+    }
+
+    #[test]
+    fn advanced_degree_titles_are_recognized() {
+        for t in ["2027 Summer Intern – AI/ML Engineer (PhD)", "Machine Learning Intern (Master's)",
+                  "MBA Intern, Strategy", "Research Intern - MS/PhD", "Ph.D. Intern", "Doctoral Intern", "Postdoc Fellow"] {
+            assert!(ADVANCED_DEGREE.is_match(t), "{t}");
+        }
+        for t in ["Software Engineer Intern", "Mastercard Data Intern", "Product Management Intern"] {
+            assert!(!ADVANCED_DEGREE.is_match(t), "{t}");
+        }
     }
 
     #[test]

@@ -3,6 +3,7 @@
 //! iCIMS…) work; JavaScript-only pages (Workday) yield little and the scorer
 //! falls back to title/company/location.
 
+use crate::sources::{oracle, workday};
 use regex::Regex;
 use std::net::IpAddr;
 use std::sync::LazyLock;
@@ -103,12 +104,21 @@ pub fn fetch_missing(
                     if cancelled() {
                         return None;
                     }
-                    let parsed = reqwest::Url::parse(url).ok()?;
+                    // Workday and Oracle job pages are JavaScript-only; read
+                    // the JSON their pages load from instead.
+                    let api = workday::detail_api_url(url)
+                        .map(|u| (u, workday::description_from_detail as fn(&serde_json::Value) -> Option<String>))
+                        .or_else(|| oracle::detail_api_url(url).map(|u| (u, oracle::description_from_detail as _)));
+                    let target = api.as_ref().map(|(u, _)| u.as_str()).unwrap_or(url);
+                    let parsed = reqwest::Url::parse(target).ok()?;
                     if !is_public_https(&parsed) {
                         return None;
                     }
-                    let html = client.get(parsed).send().ok()?.error_for_status().ok()?.text().ok()?;
-                    let text = html_to_text(&html);
+                    let resp = client.get(parsed).header("Accept", "application/json, text/html").send().ok()?.error_for_status().ok()?;
+                    let text = match api {
+                        Some((_, extract)) => extract(&resp.json::<serde_json::Value>().ok()?)?,
+                        None => html_to_text(&resp.text().ok()?),
+                    };
                     // Under ~300 chars is a JS shell or an error page, not a job.
                     (text.len() >= 300).then(|| (*i, excerpt(&text)))
                 })
@@ -132,6 +142,22 @@ mod tests {
         assert!(t.contains("Build & ship."));
         assert!(t.contains("Rust") && t.contains("SQL"));
         assert!(!t.contains("var a") && !t.contains("Menu") && !t.contains("©"));
+    }
+
+    /// Live: reads a real JPMorgan (Oracle) and GM (Workday) job through
+    /// their JSON endpoints. Run with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn reads_workday_and_oracle_descriptions_live() {
+        let client = crate::http_client().unwrap();
+        let orc = crate::sources::oracle::fetch_board(&client, "jpmc.fa.oraclecloud.com/CX_1001", "JPMorgan").unwrap();
+        let wd = crate::sources::workday::fetch_board(&client, "generalmotors.wd5/Careers_GM", "GM").unwrap();
+        let urls: Vec<(usize, String)> = vec![(0, orc[0].url.clone()), (1, wd[0].url.clone())];
+        let got = fetch_missing(&urls, &|| false);
+        assert_eq!(got.len(), 2, "both descriptions read: {urls:?}");
+        for (_, text) in got {
+            assert!(text.len() > 300, "{text}");
+        }
     }
 
     #[test]

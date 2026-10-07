@@ -64,6 +64,18 @@ pub fn job_key(url: &str) -> Option<String> {
     if let Some(c) = ASHBY.captures(url) {
         return Some(format!("ashby:{}", c[1].to_lowercase()));
     }
+    static WORKDAY: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com/(?:[a-z]{2}-[a-z]{2}/)?[^/?#]+/job/(?:[^?#]*/)?([^/?#]+)").unwrap()
+    });
+    static ORACLE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)([a-z0-9-]+)\.fa(?:\.[a-z0-9-]+)?\.oraclecloud\.com/.*?/job/(\d+)").unwrap()
+    });
+    if let Some(c) = WORKDAY.captures(url) {
+        return Some(format!("wd:{}:{}", c[1].to_lowercase(), c[2].to_lowercase()));
+    }
+    if let Some(c) = ORACLE.captures(url) {
+        return Some(format!("orc:{}:{}", c[1].to_lowercase(), &c[2]));
+    }
     LEVER.captures(url).map(|c| format!("lever:{}", c[1].to_lowercase()))
 }
 
@@ -129,6 +141,15 @@ mod tests {
             Some("ashby:e66c6658-9e65-4c58-8db2-844628b6e8f8")
         );
         assert_eq!(job_key("https://example.com/careers/123"), None);
+        // Workday: a community-list link and Blip's own link are the same job.
+        assert_eq!(
+            job_key("https://generalmotors.wd5.myworkdayjobs.com/en-CA/Careers_GM/job/Warren-Michigan/XMLNAME-Intern_JR-202621695?utm_source=Simplify"),
+            job_key("https://generalmotors.wd5.myworkdayjobs.com/Careers_GM/job/Warren-Michigan/XMLNAME-Intern_JR-202621695")
+        );
+        assert_eq!(
+            job_key("https://egup.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/20278933?utm_source=x").as_deref(),
+            Some("orc:egup:20278933")
+        );
     }
 
     #[test]

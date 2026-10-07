@@ -252,6 +252,13 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 .co.bad { border-color: rgba(248, 113, 113, .45); }
 .co.bad i { background: var(--red); box-shadow: 0 0 5px rgba(248, 113, 113, .5); }
 .co span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co .coname { cursor: text; }
+.co .coname:hover { text-decoration: underline dotted var(--dim); text-underline-offset: 2px; }
+.co input.corename {
+  font: inherit; font-size: 10.5px; color: var(--phosphor); background: var(--void);
+  border: 1px solid var(--signal-60); border-radius: 6px; padding: 1px 5px; width: auto; height: 18px; outline: none;
+}
+.mono { font-family: var(--mono); font-size: 10px; }
 .co small { color: var(--dim); font-size: 9.5px; font-variant-numeric: tabular-nums; }
 .co button {
   width: 18px; height: 18px; border-radius: 50%; border: 0; background: transparent;

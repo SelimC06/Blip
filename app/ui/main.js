@@ -670,12 +670,16 @@ function renderSources() {
     const h = health[key];
     const chip = document.createElement("span");
     chip.className = "co" + (h ? (h.ok ? " ok" : " bad") : "") + (key === justAdded ? " added" : "");
+    const platform = { greenhouse: "Greenhouse", ashby: "Ashby", lever: "Lever", workday: "Workday", oracle: "Oracle" }[co.platform] || co.platform;
     chip.title = h
-      ? (h.ok ? `${co.platform} · ${h.count} early-career roles last scan` : `${co.platform} · down: ${h.error}`)
-      : `${co.platform} · checked on the next scan`;
+      ? (h.ok ? `${platform} · ${h.count} early-career roles last scan` : `${platform} · down: ${h.error}`)
+      : `${platform} · checked on the next scan`;
     const dot = document.createElement("i");
     const name = document.createElement("span");
     name.textContent = co.name;
+    name.className = "coname";
+    name.title = "Click to rename";
+    name.onclick = () => renameChip(name, key);
     chip.append(dot, name);
     if (h?.ok) {
       const n = document.createElement("small");
@@ -694,6 +698,38 @@ function renderSources() {
     box.appendChild(chip);
   }
   justAdded = null;
+}
+
+// Workday and Oracle can't tell Blip a company's name, so names are editable.
+// Safe to change: duplicates are matched by each job's own ID, not the name.
+function renameChip(span, key) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "corename";
+  input.value = span.textContent;
+  input.size = Math.max(6, span.textContent.length);
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (save && name && name !== span.textContent) {
+      changed((cfg) => {
+        const co = cfg.companies.find((x) => `${x.platform}:${x.board}` === key);
+        if (co) co.name = name;
+      });
+    } else {
+      renderSources();
+    }
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") finish(true);
+    if (e.key === "Escape") finish(false);
+  };
+  input.onblur = () => finish(true);
 }
 
 async function addCompany() {
@@ -716,7 +752,7 @@ async function addCompany() {
       input.value = "";
       hint.className = "fhint ok";
       hint.textContent = found.roles
-        ? `Added ${e.name} (${e.platform}): ${found.roles} early-career role${found.roles === 1 ? "" : "s"} open now.`
+        ? `Added ${e.name} (${e.platform}): ${found.roles} early-career role${found.roles === 1 ? "" : "s"} open now. Click a name to rename it.`
         : `Added ${e.name} (${e.platform}). No early-career roles open right now; Blip will keep checking.`;
     }
   } catch (err) {

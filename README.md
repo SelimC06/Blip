@@ -10,7 +10,7 @@ Runs on macOS and Windows.
 
 ## What it does
 
-- **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, plus the job boards of companies you choose on Greenhouse, Ashby, and Lever.
+- **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, plus the job boards of companies you choose on Greenhouse, Ashby, Lever, Workday, and Oracle Recruiting.
 - **Remembers what it has seen.** It never shows you the same role twice, even when one job is listed on two sites under slightly different titles.
 - **Scores against your resume.** A local model reads each promising posting's full description and gives it a 0–100 match score with a one-line reason and any red flags, like a citizenship requirement or the wrong location.
 - **Shows only what's worth your time.** You get the top five. Roles scoring under 60 are never shown, so an empty panel means nothing good turned up.
@@ -63,7 +63,7 @@ You can run setup again any time from **Settings → Log**.
 | **Search** | Role types (internship, co-op, new grad), season, location (anywhere or US only, plus optional places like `NYC, Seattle, TX`), work authorization, max posting age, skip MS/PhD-only roles |
 | **Cycle** | How often to scan, active hours, pause on low battery, pause automatic scans, start at login, notifications for strong matches |
 | **Model** | Local Ollama model, or the Anthropic API with a key stored in your system keychain |
-| **Sources** | Turn each community list on or off, and manage your company watchlist. Add a company by typing its name or pasting its careers-page link. |
+| **Sources** | Turn each community list on or off, and manage your company watchlist. Add a Greenhouse, Ashby, or Lever company by name, or any company (including Workday and Oracle sites) by pasting a link to its careers page, optionally with the name first: `General Motors https://…`. Click a company's name to rename it. |
 | **Log** | Which spreadsheet ✓ writes to, export the last 7 days as CSV, run setup again |
 
 Changes save as you make them.
@@ -76,7 +76,7 @@ Each cycle runs these steps:
 2. **Dedupe.** Each posting is fingerprinted by company, title, location, and season, and also matched by its job ID on the hiring platform. Anything already seen is skipped.
 3. **Filter.** Drop anything that fails a hard filter: role type, season, posting age, location, an MS/PhD requirement, or a work-authorization requirement stated in the description. These checks are free.
 4. **Shortlist.** Compare each remaining posting to your resume using embeddings and keep the 20 closest.
-5. **Read.** Fetch each shortlisted job's page so the model sees the real description. Ashby and Lever include descriptions in their feeds, so those need no extra fetch.
+5. **Read.** Fetch each shortlisted job's page so the model sees the real description. Ashby and Lever include descriptions in their feeds, and Workday and Oracle pages are read through the JSON behind them, since the pages themselves are JavaScript-only.
 6. **Score.** The model scores each role, explains the fit, flags problems, and notes any application deadline the description states.
 7. **Show.** The top five that score 60 or higher appear in the panel. Scores are cached, so a role is never re-scored unless your resume, "looking for" note, or model changes.
 
@@ -143,7 +143,7 @@ The GitHub Actions workflow in `.github/workflows/build.yml` builds macOS and Wi
 
 ```
 crates/blip-core/        the pipeline, usable without any UI
-  src/sources/           community lists, Greenhouse, Ashby, Lever, company lookup
+  src/sources/           community lists, Greenhouse, Ashby, Lever, Workday, Oracle, company lookup
   src/score.rs           filters, embedding shortlist, LLM scoring, deadlines
   src/location.rs        location filter
   src/auth.rs            work-authorization filter
@@ -159,10 +159,11 @@ app/ui/                  the pill: HTML, CSS, JS, fonts
 ## Known limits
 
 - **Unsigned builds.** macOS shows a Gatekeeper prompt the first time you open Blip (right-click → Open), and Windows shows SmartScreen.
-- **JavaScript-only job pages.** Pages like Workday's return no readable description, so those roles are scored from their title, company, and location alone.
+- **JavaScript-only job pages.** Workday and Oracle are handled, but other JavaScript-only career sites return no readable description, so those roles are scored from their title, company, and location alone.
+- **Workday and Oracle are unofficial.** Blip reads the same endpoints their own career pages use. They aren't published APIs, so a company can block them or Workday and Oracle can change them. If that happens, the company's chip shows as down.
 - **Rare deadlines.** Most postings don't state a deadline, so most roles won't have one.
-- **Company boards by name.** Typing a name finds a board only when its URL name matches, for example "Anduril" lives at `andurilindustries`. When a name isn't found, paste the careers-page link instead.
+- **Company boards by name.** Typing a name finds a Greenhouse, Ashby, or Lever board only when its URL name matches, for example "Anduril" lives at `andurilindustries`. Workday and Oracle sites always need a link.
 
 ## Credits
 
-Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), and the public Greenhouse, Ashby, and Lever job board APIs.
+Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), the public Greenhouse, Ashby, and Lever job board APIs, and the endpoints behind Workday and Oracle Recruiting career sites.

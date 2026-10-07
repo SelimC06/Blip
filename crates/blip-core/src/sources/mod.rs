@@ -1,8 +1,10 @@
 pub mod ashby;
 pub mod greenhouse;
 pub mod lever;
+pub mod oracle;
 pub mod simplify;
 pub mod vansh;
+pub mod workday;
 
 use crate::config::CompanyEntry;
 use crate::model::Posting;
@@ -18,6 +20,8 @@ pub fn fetch_company(client: &reqwest::blocking::Client, c: &CompanyEntry) -> Re
         "greenhouse" => greenhouse::fetch_board(client, &c.board, &c.name),
         "ashby" => ashby::fetch_board(client, &c.board, &c.name),
         "lever" => lever::fetch_board(client, &c.board, &c.name),
+        "workday" => workday::fetch_board(client, &c.board, &c.name),
+        "oracle" => oracle::fetch_board(client, &c.board, &c.name),
         other => bail!("unknown job board platform \"{other}\""),
     }
 }
@@ -37,8 +41,16 @@ static BOARD_URL: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 
-/// "https://jobs.lever.co/palantir/…" → ("lever", "palantir").
+/// "https://jobs.lever.co/palantir/…" → ("lever", "palantir"). Workday and
+/// Oracle boards come back as "tenant.wdN/site" and "host/siteNumber".
 pub fn parse_board_url(s: &str) -> Option<(&'static str, String)> {
+    let with_scheme = if s.contains("://") { s.to_string() } else { format!("https://{s}") };
+    if let Some(site) = workday::parse_url(&with_scheme) {
+        return Some(("workday", site.board()));
+    }
+    if let Some(site) = oracle::parse_url(&with_scheme) {
+        return Some(("oracle", site.board()));
+    }
     let caps = BOARD_URL.captures(s)?;
     let whole = caps.get(0)?.as_str().to_lowercase();
     let platform = if whole.contains("greenhouse") {
@@ -100,10 +112,14 @@ pub fn find_company(client: &reqwest::blocking::Client, query: &str) -> Result<F
     if query.is_empty() {
         bail!("Type a company name or paste its careers page link.");
     }
-    let (candidates, typed_name): (Vec<(&str, String)>, Option<String>) = match parse_board_url(query) {
-        Some((platform, board)) => (vec![(platform, board)], None),
-        None if query.contains("://") || query.contains('/') => {
-            bail!("That link isn't a Greenhouse, Ashby, or Lever job board. Try typing the company's name instead.")
+    // "General Motors https://…" names a board whose platform can't name itself.
+    let link = query.split_whitespace().find(|t| t.contains('/') && t.contains('.'));
+    let given_name = link.map(|l| query.replace(l, " ").split_whitespace().collect::<Vec<_>>().join(" "));
+    let given_name = given_name.filter(|n| !n.is_empty());
+    let (candidates, typed_name): (Vec<(&str, String)>, Option<String>) = match link.and_then(parse_board_url) {
+        Some((platform, board)) => (vec![(platform, board)], given_name),
+        None if link.is_some() => {
+            bail!("That link isn't a Greenhouse, Ashby, Lever, Workday, or Oracle job board. Try typing the company's name instead.")
         }
         None => {
             let guesses = slug_guesses(query);
@@ -139,14 +155,17 @@ pub fn find_company(client: &reqwest::blocking::Client, query: &str) -> Result<F
         .min_by_key(|(i, _)| *i)
         .ok_or_else(|| match &typed_name {
             Some(n) => anyhow!(
-                "Couldn't find \"{n}\" on Greenhouse, Ashby, or Lever. Paste the link to its careers page instead."
+                "Couldn't find \"{n}\" on Greenhouse, Ashby, or Lever. Paste a link to its careers page instead (Workday and Oracle sites need a link)."
             ),
             None => anyhow!("That job board doesn't exist or isn't public."),
         })?;
     let (platform, board) = &candidates[i];
+    // Workday/Oracle boards look like "generalmotors.wd5/Careers_GM"; the
+    // tenant is the closest thing to a name they have.
+    let slug = board.split(['.', '/']).next().unwrap_or(board);
     let name = official_name(client, platform, board)
         .or(typed_name)
-        .unwrap_or_else(|| title_case(board));
+        .unwrap_or_else(|| title_case(slug));
     Ok(Found {
         entry: CompanyEntry { platform: platform.to_string(), board: board.clone(), name },
         roles: postings.len(),
@@ -165,6 +184,14 @@ mod tests {
         assert_eq!(parse_board_url("https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58"), Some(("ashby", "notion".into())));
         assert_eq!(parse_board_url("jobs.lever.co/palantir/6ed76ce8"), Some(("lever", "palantir".into())));
         assert_eq!(parse_board_url("https://careers.google.com/jobs"), None);
+        assert_eq!(
+            parse_board_url("https://generalmotors.wd5.myworkdayjobs.com/en-US/Careers_GM/job/X_JR-1"),
+            Some(("workday", "generalmotors.wd5/Careers_GM".into()))
+        );
+        assert_eq!(
+            parse_board_url("jpmc.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/requisitions"),
+            Some(("oracle", "jpmc.fa.oraclecloud.com/CX_1001".into()))
+        );
     }
 
     #[test]
