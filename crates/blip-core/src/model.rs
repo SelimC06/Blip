@@ -19,6 +19,14 @@ pub struct Posting {
 }
 
 impl Posting {
+    /// Work-authorization requirement read from the title markers and
+    /// description: one of the `auth` constants, or "" when none is stated.
+    pub fn auth_requirement(&self) -> &'static str {
+        crate::auth::classify(&self.title, &self.description)
+    }
+}
+
+impl Posting {
     /// Dedupe key: same role reposted on another board or URL collapses to one.
     /// Built from normalized company|title|location|season, never the URL.
     pub fn fingerprint(&self) -> String {

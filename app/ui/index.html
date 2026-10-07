@@ -82,6 +82,24 @@
         <input id="season" type="text" spellcheck="false" placeholder="Summer 2027">
       </div>
       <div class="field">
+        <span class="flabel">location</span>
+        <div class="seg" id="locscope">
+          <button data-v="anywhere">anywhere</button><button data-v="us">US only</button>
+        </div>
+        <input id="places" type="text" spellcheck="false" placeholder="near… e.g. NYC, Seattle, TX (optional)" aria-label="Preferred places">
+        <div class="fhint">Remote roles always count. Postings with an unclear location are kept.</div>
+      </div>
+      <div class="field">
+        <label class="flabel" for="workauth">work authorization</label>
+        <select id="workauth">
+          <option value="auto">From my resume</option>
+          <option value="citizen">US citizen</option>
+          <option value="permanent_resident">Green card holder</option>
+          <option value="needs_sponsorship">Needs visa sponsorship</option>
+        </select>
+        <div class="fhint" id="workauthhint"></div>
+      </div>
+      <div class="field">
         <span class="flabel">max posting age</span>
         <div class="seg" id="maxage">
           <button data-v="1">1d</button><button data-v="3">3d</button><button data-v="7">7d</button><button data-v="14">14d</button><button data-v="30">30d</button>
@@ -90,15 +108,6 @@
       <div class="field frow">
         <span class="flabel">skip MS/PhD-only roles</span>
         <button class="switch" id="skipadv" role="switch" aria-label="Skip MS/PhD-only roles"><span></span></button>
-      </div>
-      <div class="field">
-        <div class="fhead">
-          <span class="flabel">notify me at match ≥</span>
-          <button class="switch" id="notifyon" role="switch" aria-label="Notifications"><span></span></button>
-        </div>
-        <div class="seg" id="notifyat">
-          <button data-v="80">80</button><button data-v="85">85</button><button data-v="90">90</button><button data-v="95">95</button>
-        </div>
       </div>
     </section>
 
@@ -131,6 +140,15 @@
       <div class="field frow">
         <span class="flabel">start at login</span>
         <button class="switch" id="autostart" role="switch" aria-label="Start at login"><span></span></button>
+      </div>
+      <div class="field">
+        <div class="fhead">
+          <span class="flabel">notify me at match ≥</span>
+          <button class="switch" id="notifyon" role="switch" aria-label="Notifications"><span></span></button>
+        </div>
+        <div class="seg" id="notifyat">
+          <button data-v="80">80</button><button data-v="85">85</button><button data-v="90">90</button><button data-v="95">95</button>
+        </div>
       </div>
     </section>
 
@@ -261,6 +279,12 @@
         <div class="field">
           <div class="fhead"><label class="flabel" for="s_season">season</label></div>
           <input id="s_season" type="text" spellcheck="false">
+        </div>
+        <div class="field">
+          <span class="flabel">where</span>
+          <div class="seg" id="s_locscope">
+            <button data-v="anywhere">anywhere</button><button data-v="us">US only</button>
+          </div>
         </div>
         <div class="field">
           <span class="flabel">only roles posted in the last</span>

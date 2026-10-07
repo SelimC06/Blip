@@ -1,8 +1,10 @@
 pub mod applied_log;
+pub mod auth;
 pub mod config;
 pub mod describe;
 pub mod export;
 pub mod llm;
+pub mod location;
 pub mod model;
 pub mod profile;
 pub mod score;

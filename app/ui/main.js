@@ -448,6 +448,21 @@ function renderSettings() {
 
   for (const b of el("roletypes").children) b.classList.toggle("on", c.role_types.includes(b.dataset.v));
   if (document.activeElement !== el("season")) el("season").value = c.season;
+  setSeg("locscope", c.location_scope);
+  if (document.activeElement !== el("places")) el("places").value = (c.places || []).join(", ");
+  el("workauth").value = c.work_authorization || "auto";
+  const fromResume = {
+    citizen: "US citizen",
+    permanent_resident: "green card holder",
+    needs_sponsorship: "needs visa sponsorship",
+  }[settings.resume_authorization];
+  el("workauth").options[0].textContent = fromResume ? `From my resume (${fromResume})` : "From my resume (not stated)";
+  const effective = c.work_authorization === "auto" ? settings.resume_authorization : c.work_authorization;
+  el("workauthhint").textContent = {
+    citizen: "Nothing hidden: every role is open to you.",
+    permanent_resident: "Hides roles that require US citizenship or a security clearance.",
+    needs_sponsorship: "Hides roles that say they won't sponsor, or need citizenship, a clearance, or US-person status.",
+  }[effective] || "Your resume doesn't say, so nothing is hidden. Pick one to filter.";
   setSeg("maxage", c.max_age_days);
   el("skipadv").classList.toggle("on", c.exclude_advanced_degree);
   el("skipadv").setAttribute("aria-checked", c.exclude_advanced_degree);
@@ -618,6 +633,14 @@ el("pickresume").addEventListener("click", async () => {
 
 el("lookingfor").addEventListener("input", (e) => changed((c) => { c.looking_for = e.target.value; }));
 el("season").addEventListener("input", (e) => changed((c) => { c.season = e.target.value.trim(); }));
+el("places").addEventListener("input", (e) => changed((c) => {
+  c.places = e.target.value.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+}));
+el("locscope").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.location_scope = b.dataset.v; });
+});
+el("workauth").addEventListener("change", (e) => changed((c) => { c.work_authorization = e.target.value; }));
 el("amodel").addEventListener("input", (e) => changed((c) => { c.anthropic_model = e.target.value.trim(); }));
 
 el("roletypes").addEventListener("click", (e) => {
@@ -859,6 +882,7 @@ function renderSetup() {
   if (setupPrefs) {
     for (const b of el("s_roletypes").children) b.classList.toggle("on", setupPrefs.role_types.includes(b.dataset.v));
     setSeg("s_maxage", setupPrefs.max_age_days);
+    setSeg("s_locscope", setupPrefs.location_scope);
   }
 
   // Footer.
@@ -960,6 +984,12 @@ el("s_roletypes").addEventListener("click", (e) => {
   setupPrefs.role_types = setupPrefs.role_types.includes(v)
     ? setupPrefs.role_types.filter((x) => x !== v)
     : [...setupPrefs.role_types, v];
+  renderSetup();
+});
+el("s_locscope").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || !setupPrefs) return;
+  setupPrefs.location_scope = b.dataset.v;
   renderSetup();
 });
 el("s_maxage").addEventListener("click", (e) => {

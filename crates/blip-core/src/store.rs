@@ -28,6 +28,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE postings ADD COLUMN job_key TEXT",
     "ALTER TABLE postings ADD COLUMN red_flags TEXT",
     "ALTER TABLE postings ADD COLUMN score_key TEXT",
+    "ALTER TABLE postings ADD COLUMN auth_req TEXT",
 ];
 
 #[derive(Debug, Clone)]
@@ -96,7 +97,26 @@ impl Store {
         conn.execute("CREATE INDEX IF NOT EXISTS postings_job_key ON postings(job_key)", [])?;
         let store = Store { conn };
         store.backfill_job_keys()?;
+        store.backfill_auth_req()?;
         Ok(store)
+    }
+
+    /// Classify descriptions saved before the authorization filter existed.
+    fn backfill_auth_req(&self) -> Result<()> {
+        let pending: Vec<(String, String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT fingerprint, title, description FROM postings WHERE auth_req IS NULL",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        for (fp, title, description) in pending {
+            self.conn.execute(
+                "UPDATE postings SET auth_req = ?2 WHERE fingerprint = ?1",
+                params![fp, crate::auth::classify(&title, &description)],
+            )?;
+        }
+        Ok(())
     }
 
     /// Give rows saved before job keys existed their key, then retire the
@@ -168,8 +188,8 @@ impl Store {
         self.conn.execute(
             "INSERT INTO postings
              (fingerprint, company, title, location, url, source, season, posted,
-              description, deadline, job_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULLIF(?10, ''), ?11)",
+              description, deadline, job_key, auth_req)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULLIF(?10, ''), ?11, ?12)",
             params![
                 fp,
                 p.company,
@@ -181,7 +201,8 @@ impl Store {
                 p.posted,
                 p.description,
                 p.deadline,
-                key
+                key,
+                p.auth_requirement()
             ],
         )?;
         Ok(true)
@@ -236,11 +257,12 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
-    /// Cache a fetched description so the page is never fetched twice.
-    pub fn save_description(&self, fingerprint: &str, description: &str) -> Result<()> {
+    /// Cache a fetched description (so the page is never fetched twice)
+    /// along with the work-authorization requirement it states.
+    pub fn save_description(&self, p: &Posting) -> Result<()> {
         self.conn.execute(
-            "UPDATE postings SET description = ?2 WHERE fingerprint = ?1",
-            params![fingerprint, description],
+            "UPDATE postings SET description = ?2, auth_req = ?3 WHERE fingerprint = ?1",
+            params![p.fingerprint(), p.description, p.auth_requirement()],
         )?;
         Ok(())
     }

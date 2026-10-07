@@ -18,6 +18,14 @@ pub struct Config {
     pub max_age_days: f64,
     /// Drop roles marked 🎓 (requires MS/PhD) on the Simplify list.
     pub exclude_advanced_degree: bool,
+    /// "anywhere" or "us": drop postings that only name places outside the US.
+    pub location_scope: String,
+    /// Optional places to stay near ("NYC", "TX", "Bay Area"). Remote roles
+    /// always pass. Empty = anywhere in scope.
+    pub places: Vec<String>,
+    /// "auto" (read from the resume), "citizen", "permanent_resident", or
+    /// "needs_sponsorship". Decides which roles the sponsorship filter hides.
+    pub work_authorization: String,
     /// Minutes between automatic scan cycles.
     pub cycle_minutes: u64,
     /// Automatic cycles only run between these local hours (0–24). Equal
@@ -54,6 +62,9 @@ impl Default for Config {
             season: default_season(),
             max_age_days: 7.0,
             exclude_advanced_degree: true,
+            location_scope: "anywhere".into(),
+            places: Vec::new(),
+            work_authorization: "auto".into(),
             cycle_minutes: 30,
             active_start_hour: 8,
             active_end_hour: 23,

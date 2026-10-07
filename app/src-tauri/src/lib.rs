@@ -235,6 +235,9 @@ struct SettingsDto {
     applied_log_resolved: String,
     applied_log_exists: bool,
     profile_summary: String,
+    /// What the resume says about work authorization, for the "From my
+    /// resume" option ("citizen", "needs_sponsorship", "unknown", …).
+    resume_authorization: String,
 }
 
 fn profile_summary() -> String {
@@ -262,6 +265,12 @@ fn get_settings() -> Result<SettingsDto, String> {
         applied_log_resolved: log.to_string_lossy().into_owned(),
         applied_log_exists: log.exists(),
         profile_summary: profile_summary(),
+        resume_authorization: std::fs::read_to_string(profile::profile_path())
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .and_then(|v| v["data"]["work_authorization"].as_str().map(blip_core::auth::normalize_authorization))
+            .unwrap_or("unknown")
+            .to_string(),
         config: cfg,
     })
 }

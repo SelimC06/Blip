@@ -2,7 +2,7 @@
 //! field to ~20, then the LLM deep-reads only those survivors.
 
 use crate::config::Config;
-use crate::describe;
+use crate::{auth, describe, location};
 use crate::llm::Llm;
 use crate::model::{same_season, Cancelled, Posting};
 use crate::profile::Profile;
@@ -90,9 +90,29 @@ pub fn age_days(posted: &str) -> Option<f64> {
     None
 }
 
-pub fn hard_filter(cfg: &Config, p: &Posting) -> bool {
+/// The authorization the filters act on: the setting, or what the resume
+/// says when the setting is "auto".
+pub fn effective_authorization(cfg: &Config, profile: &Profile) -> String {
+    if cfg.work_authorization.trim().is_empty() || cfg.work_authorization == "auto" {
+        profile.data["work_authorization"].as_str().unwrap_or("unknown").to_string()
+    } else {
+        cfg.work_authorization.clone()
+    }
+}
+
+pub fn hard_filter(cfg: &Config, p: &Posting, authorization: &str) -> bool {
     // 🎓 on the Simplify list = advanced degree (MS/PhD) required.
     if cfg.exclude_advanced_degree && p.title.contains('\u{1F393}') {
+        return false;
+    }
+    if !location::in_scope(&p.location, &cfg.location_scope)
+        || !location::near_places(&p.location, &cfg.places)
+    {
+        return false;
+    }
+    // Known only once a description has been read (Ashby up front, others
+    // when shortlisted); score_new re-checks right after fetching.
+    if auth::blocks(p.auth_requirement(), authorization) {
         return false;
     }
     if let Some(age) = age_days(&p.posted) {
@@ -148,10 +168,11 @@ pub fn rank(
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<Vec<Scored>> {
     let key = score_key(cfg, profile);
+    let authorization = effective_authorization(cfg, profile);
     let mut cached: Vec<Scored> = Vec::new();
     let mut unscored: Vec<Posting> = Vec::new();
     for (p, prior) in candidates {
-        if !hard_filter(cfg, &p) {
+        if !hard_filter(cfg, &p, &authorization) {
             continue;
         }
         match prior {
@@ -163,7 +184,7 @@ pub fn rank(
     let fresh = if unscored.is_empty() {
         Vec::new()
     } else {
-        score_new(llm, cfg, profile, store, unscored, cancelled)?
+        score_new(llm, cfg, profile, store, unscored, &authorization, cancelled)?
     };
     store.save_scores(&fresh, &key)?;
 
@@ -190,6 +211,7 @@ fn score_new(
     profile: &Profile,
     store: &Store,
     unscored: Vec<Posting>,
+    authorization: &str,
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<Vec<Scored>> {
     // Stage 1: embedding similarity prefilter.
@@ -218,12 +240,19 @@ fn score_new(
     if !missing.is_empty() {
         eprintln!("fetching {} job descriptions…", missing.len());
         for (i, text) in describe::fetch_missing(&missing, cancelled) {
-            store.save_description(&shortlist[i].fingerprint(), &text)?;
             shortlist[i].description = text;
+            store.save_description(&shortlist[i])?;
         }
     }
     if cancelled() {
         return Err(Cancelled.into());
+    }
+    // Now that descriptions are in, drop roles the user can't take before
+    // spending LLM calls on them. They stay filtered on later cycles too.
+    let before = shortlist.len();
+    shortlist.retain(|p| !auth::blocks(p.auth_requirement(), authorization));
+    if shortlist.len() < before {
+        eprintln!("skipped {} roles you aren't eligible for (work authorization)", before - shortlist.len());
     }
 
     // Stage 2: LLM scores each survivor.
