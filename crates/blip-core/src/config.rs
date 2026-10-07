@@ -83,6 +83,8 @@ pub struct Config {
     pub prefilter_top: usize,
     /// Never surface a match below this score; an empty panel beats noise.
     pub min_score: u8,
+    /// Most matches shown per scan (only ones clearing `min_score` count).
+    pub results_per_scan: usize,
     /// First-run setup finished (or skipped by an existing install).
     pub setup_done: bool,
     /// Company job boards read directly every cycle.
@@ -118,6 +120,7 @@ impl Default for Config {
             battery_pause_below: 20,
             prefilter_top: 20,
             min_score: 60,
+            results_per_scan: 5,
             setup_done: false,
             companies: default_companies(),
             use_simplify: true,

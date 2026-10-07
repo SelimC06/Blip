@@ -143,7 +143,7 @@ function targetDims(v) {
   }
   // Only the results list caps its height (and scrolls inside); settings and
   // setup always grow to show everything at once.
-  const cap = v === "panel" ? 470 : window.innerHeight - SURFACE_TOP - 4;
+  const cap = v === "panel" ? Math.min(600, window.innerHeight - SURFACE_TOP - 4) : window.innerHeight - SURFACE_TOP - 4;
   return { w: layer.offsetWidth + 2, h: Math.min(h, cap) + 2, r: CARD_RADIUS };
 }
 
@@ -730,6 +730,7 @@ function renderSettings() {
   el("notifyat").style.opacity = c.notify_enabled ? 1 : 0.45;
 
   setSeg("interval", c.cycle_minutes);
+  setSeg("perscan", c.results_per_scan);
   el("hstart").value = c.active_start_hour;
   el("hend").value = c.active_end_hour;
   setSeg("battery", c.battery_pause_below);
@@ -913,6 +914,10 @@ el("maxage").addEventListener("click", (e) => {
   if (b) changed((c) => { c.max_age_days = Number(b.dataset.v); });
 });
 el("skipadv").addEventListener("click", () => changed((c) => { c.exclude_advanced_degree = !c.exclude_advanced_degree; }));
+el("perscan").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) changed((c) => { c.results_per_scan = Number(b.dataset.v); });
+});
 el("interval").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (b) changed((c) => { c.cycle_minutes = Number(b.dataset.v); });

@@ -101,7 +101,7 @@ svg { display: block; flex: none; }
 
 /* ---------- cards (results + settings) ---------- */
 .card { display: flex; flex-direction: column; }
-#panelLayer { width: 378px; max-height: 470px; }
+#panelLayer { width: 378px; max-height: min(600px, calc(100vh - 16px)); }
 #setLayer, #setupLayer { width: 360px; }
 
 /* Shared horizontal rhythm: 14px left edge, 12px right edge, for every

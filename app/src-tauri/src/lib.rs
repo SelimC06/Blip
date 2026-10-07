@@ -18,7 +18,6 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
 
-const TOP_N: usize = 5;
 /// Flag deadlines this close in the panel; remind (once) at this many days.
 const CLOSING_SOON_DAYS: i64 = 7;
 const REMIND_DAYS: i64 = 3;
@@ -478,7 +477,7 @@ fn run_cycle(app: &AppHandle, shared: &Shared) {
 
         let report = blip_core::run_scan(&store, &cfg, &cancelled)?;
         let candidates = store.unsurfaced(&score::score_key(&cfg, &prof))?;
-        let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, TOP_N, &cancelled)?;
+        let ranked = score::rank(&llm, &cfg, &prof, &store, candidates, cfg.results_per_scan.clamp(1, 10), &cancelled)?;
         store.mark_surfaced(
             &ranked.iter().map(|s| s.posting.fingerprint()).collect::<Vec<_>>(),
         )?;
