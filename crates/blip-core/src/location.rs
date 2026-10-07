@@ -34,13 +34,19 @@ static CA_PROVINCE_CODE: LazyLock<Regex> =
 
 static REMOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bremote\b").unwrap());
 
+// Amazon and others end locations with an ISO-3 country code:
+// "Seattle, Washington, USA", "Cape Town, Western Cape, ZAF", "Berlin, DEU".
+static ISO3_COUNTRY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r",\s*([A-Z]{3})\s*(?:,|$)").unwrap());
+
 fn mentions_us(loc: &str) -> bool {
     // "Georgia" and "Washington" are ambiguous; a non-US hit nearby decides.
     US_STATE_CODE.is_match(loc) || US_WORDS.is_match(loc)
 }
 
 fn mentions_non_us(loc: &str) -> bool {
-    NON_US.is_match(loc) || CA_PROVINCE_CODE.is_match(loc)
+    NON_US.is_match(loc)
+        || CA_PROVINCE_CODE.is_match(loc)
+        || ISO3_COUNTRY.captures_iter(loc).any(|c| &c[1] != "USA")
 }
 
 pub fn is_remote(loc: &str) -> bool {
@@ -130,12 +136,14 @@ mod tests {
             "NYC", "SF", "New York, New York, USA", "Remote in USA", "Austin, TX",
             "Toronto, ON, Canada, New York, NY", // mixed: a US option exists
             "In-Office", "Remote", "", "Hybrid", "Seattle, WA",
+            "Seattle, Washington, USA", "Arlington, Virginia, USA",
         ] {
             assert!(in_scope(keep, "us"), "should keep {keep:?}");
         }
         for drop in [
             "Madrid, Spain", "Berlin, Germany", "London, UK", "Toronto, ON, Canada",
             "Remote in Canada", "Bengaluru, India", "Singapore", "Waterloo, ON",
+            "Cape Town, Western Cape, ZAF", "Berlin, Berlin, DEU", "Dublin, IRL",
         ] {
             assert!(!in_scope(drop, "us"), "should drop {drop:?}");
         }

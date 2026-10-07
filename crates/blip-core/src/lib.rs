@@ -61,6 +61,17 @@ pub fn run_scan(
     if cfg.use_vansh {
         record("github:vanshb03".into(), sources::vansh::fetch(&client), &mut all);
     }
+    if cfg.use_amazon {
+        record("amazon".into(), sources::amazon::fetch(&client), &mut all);
+    }
+    if cfg.use_usajobs {
+        let key = secrets::usajobs_key().unwrap_or_default();
+        record(
+            "usajobs".into(),
+            sources::usajobs::fetch(&client, &cfg.usajobs_email, &key, &cfg.role_types),
+            &mut all,
+        );
+    }
     for company in &cfg.companies {
         if cancelled() {
             return Err(Cancelled.into());

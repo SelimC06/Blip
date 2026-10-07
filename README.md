@@ -10,7 +10,7 @@ Runs on macOS and Windows.
 
 ## What it does
 
-- **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, plus the job boards of companies you choose on Greenhouse, Ashby, Lever, Workday, and Oracle Recruiting.
+- **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, Amazon's own job site, federal internships from [USAJobs](https://www.usajobs.gov) (with a free API key), and the job boards of companies you choose on Greenhouse, Ashby, Lever, Workday, and Oracle Recruiting.
 - **Remembers what it has seen.** It never shows you the same role twice, even when one job is listed on two sites under slightly different titles.
 - **Scores against your resume.** A local model reads each promising posting's full description and gives it a 0–100 match score with a one-line reason and any red flags, like a citizenship requirement or the wrong location.
 - **Shows only what's worth your time.** You get the top five. Roles scoring under 60 are never shown, so an empty panel means nothing good turned up.
@@ -63,7 +63,7 @@ You can run setup again any time from **Settings → Log**.
 | **Search** | Role types (internship, co-op, new grad), season, location (anywhere or US only, plus optional places like `NYC, Seattle, TX`), work authorization, max posting age, skip MS/PhD-only roles |
 | **Cycle** | How often to scan, active hours, pause on low battery, pause automatic scans, start at login, notifications for strong matches |
 | **Model** | Local Ollama model, or the Anthropic API with a key stored in your system keychain |
-| **Sources** | Turn each community list on or off, and manage your company watchlist. Add a Greenhouse, Ashby, or Lever company by name, or any company (including Workday and Oracle sites) by pasting a link to its careers page, optionally with the name first: `General Motors https://…`. Click a company's name to rename it. |
+| **Sources** | Turn each job list on or off (the community lists, Amazon, and USAJobs, which needs your free API key), and manage your company watchlist. Add a Greenhouse, Ashby, or Lever company by name, or any company (including Workday and Oracle sites) by pasting a link to its careers page, optionally with the name first: `General Motors https://…`. Click a company's name to rename it. |
 | **Log** | Which spreadsheet ✓ writes to, export the last 7 days as CSV, run setup again |
 
 Changes save as you make them.
@@ -97,7 +97,7 @@ Everything Blip stores is in one folder:
 | `profile.json` | What Blip learned from your resume |
 | `blip.db` | Every posting seen, scores, and your shown, applied, and dismissed history (SQLite) |
 
-Your applied roles are also written to `~/Documents/Applied.xlsx` unless you choose another file. An Anthropic API key, if you add one, lives in the macOS Keychain or Windows Credential Manager, never in a file.
+Your applied roles are also written to `~/Documents/Applied.xlsx` unless you choose another file. API keys you add (Anthropic, USAJobs) live in the macOS Keychain or Windows Credential Manager, never in a file.
 
 To start fresh, quit Blip and delete the folder.
 
@@ -158,6 +158,7 @@ app/ui/                  the pill: HTML, CSS, JS, fonts
 
 ## Known limits
 
+- **USAJobs needs a key.** Request a free one at [developer.usajobs.gov](https://developer.usajobs.gov/apirequest/) and paste it, with the email you registered, in Settings → Sources.
 - **Unsigned builds.** macOS shows a Gatekeeper prompt the first time you open Blip (right-click → Open), and Windows shows SmartScreen.
 - **JavaScript-only job pages.** Workday and Oracle are handled, but other JavaScript-only career sites return no readable description, so those roles are scored from their title, company, and location alone.
 - **Workday and Oracle are unofficial.** Blip reads the same endpoints their own career pages use. They aren't published APIs, so a company can block them or Workday and Oracle can change them. If that happens, the company's chip shows as down.
@@ -166,4 +167,4 @@ app/ui/                  the pill: HTML, CSS, JS, fonts
 
 ## Credits
 
-Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), the public Greenhouse, Ashby, and Lever job board APIs, and the endpoints behind Workday and Oracle Recruiting career sites.
+Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), the public Greenhouse, Ashby, and Lever job board APIs, amazon.jobs, the official USAJobs API, and the endpoints behind Workday and Oracle Recruiting career sites.

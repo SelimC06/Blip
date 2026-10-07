@@ -239,6 +239,7 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 .lists { display: flex; flex-direction: column; gap: 10px; }
 .listrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lname { color: var(--phosphor); font-size: 11px; }
+.fhint a { color: var(--phosphor); text-underline-offset: 2px; }
 
 /* Company watchlist: wrapping chips, each with health dot, count, remove. */
 .cos { display: flex; flex-wrap: wrap; gap: 5px; }

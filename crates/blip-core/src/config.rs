@@ -95,6 +95,12 @@ pub struct Config {
     pub use_simplify_new_grad: bool,
     /// Read the vanshb03 / Ouckah internship list.
     pub use_vansh: bool,
+    /// Read amazon.jobs.
+    pub use_amazon: bool,
+    /// Read USAJobs (needs a free key, stored in the credential store).
+    pub use_usajobs: bool,
+    /// The email the USAJobs key was issued to; USAJobs requires it.
+    pub usajobs_email: String,
     /// "ollama" (default, local) or "anthropic" (API key required).
     pub backend: String,
     pub ollama_url: String,
@@ -130,6 +136,9 @@ impl Default for Config {
             use_simplify: true,
             use_simplify_new_grad: true,
             use_vansh: true,
+            use_amazon: true,
+            use_usajobs: false,
+            usajobs_email: String::new(),
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),

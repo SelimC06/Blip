@@ -193,8 +193,27 @@
 
     <section class="pane" data-pane="sources" hidden>
       <div class="field">
-        <span class="flabel">community lists</span>
+        <span class="flabel">job lists</span>
         <div class="lists" id="lists"></div>
+      </div>
+      <div class="field" id="usajobsfield">
+        <div class="listrow">
+          <div class="stack">
+            <span class="lname">USAJobs: federal internships</span>
+            <span class="fhint" id="usajobshint">Pathways internships and recent-graduate roles across federal agencies. Most require US citizenship.</span>
+          </div>
+          <button class="switch" id="useusajobs" role="switch" aria-label="Read USAJobs"><span></span></button>
+        </div>
+        <div id="usajobskeys" hidden>
+          <div class="inline" style="margin-top:8px">
+            <input id="usajobsemail" type="text" spellcheck="false" autocomplete="off" placeholder="email you registered the key with">
+          </div>
+          <div class="inline" style="margin-top:6px">
+            <input id="usajobskey" type="password" spellcheck="false" autocomplete="off" placeholder="API key">
+            <button class="btn" id="saveusajobskey">save</button>
+          </div>
+          <div class="fhint" id="usajobskeyhint" style="margin-top:6px"></div>
+        </div>
       </div>
       <div class="field">
         <div class="fhead"><span class="flabel">companies</span><span class="rval" id="cocount"></span></div>

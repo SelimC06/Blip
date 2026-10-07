@@ -1,8 +1,10 @@
+pub mod amazon;
 pub mod ashby;
 pub mod greenhouse;
 pub mod lever;
 pub mod oracle;
 pub mod simplify;
+pub mod usajobs;
 pub mod vansh;
 pub mod workday;
 

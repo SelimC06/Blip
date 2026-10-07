@@ -129,7 +129,10 @@ pub fn hard_filter(cfg: &Config, p: &Posting, authorization: &str) -> bool {
         return false;
     }
     if !cfg.role_types.is_empty() {
-        let matches_type = cfg.role_types.iter().any(|t| match t.as_str() {
+        // Federal Pathways roles ("Student Trainee (Engineering)") get their
+        // role type from the USAJobs hiring path, not the title.
+        let usajobs_role = crate::sources::usajobs::role_type(&p.source);
+        let matches_type = cfg.role_types.iter().any(|t| usajobs_role == Some(t.as_str()) || match t.as_str() {
             "internship" => ROLE_INTERNSHIP.is_match(&p.title),
             "co-op" => ROLE_COOP.is_match(&p.title),
             // New-grad list titles are plain ("Software Engineer 1"); the

@@ -613,7 +613,37 @@ const LISTS = [
     about: "A second list that catches roles Simplify misses, and marks which ones won't sponsor." },
   { key: "use_simplify_new_grad", source: "github:simplify-new-grad", name: "SimplifyJobs new grad",
     about: "Full-time roles for graduating students.", needs: "new-grad" },
+  { key: "use_amazon", source: "amazon", name: "Amazon", note: "worldwide",
+    about: "Internships from amazon.jobs, worldwide. Use \u201cUS only\u201d in Search to keep just US roles." },
 ];
+
+function renderUsajobs(c, health) {
+  const on = !!c.use_usajobs;
+  const sw = el("useusajobs");
+  sw.classList.toggle("on", on);
+  sw.setAttribute("aria-checked", on);
+  el("usajobskeys").hidden = !on;
+  const h = health["usajobs"];
+  const hint = el("usajobshint");
+  hint.className = "fhint" + (on && h && !h.ok ? " bad" : "");
+  const missingKey = !settings.has_usajobs_key || !(c.usajobs_email || "").trim();
+  hint.textContent = on && missingKey ? "Add your key below."
+    : on && h && !h.ok ? `Down: ${h.error}`
+    : on && h ? `${h.count} open roles last scan \u00b7 most need US citizenship`
+    : "Federal Pathways internships and recent-grad roles.";
+  if (document.activeElement !== el("usajobsemail")) el("usajobsemail").value = c.usajobs_email || "";
+  const kh = el("usajobskeyhint");
+  kh.className = "fhint" + (settings.has_usajobs_key ? " ok" : "");
+  kh.innerHTML = settings.has_usajobs_key
+    ? "Key saved in your Keychain."
+    : 'Needs a free key: request one at <a href="#" id="usajobslink">developer.usajobs.gov</a>, then paste it here.';
+  el("saveusajobskey").textContent = settings.has_usajobs_key ? "replace" : "save";
+  const link = document.getElementById("usajobslink");
+  if (link) link.onclick = (e) => {
+    e.preventDefault();
+    invoke("open_link", { url: "https://developer.usajobs.gov/apirequest/" }).catch(() => {});
+  };
+}
 
 function renderLists(c, health) {
   const box = el("lists");
@@ -629,12 +659,15 @@ function renderLists(c, health) {
     const name = document.createElement("span");
     name.className = "lname";
     name.textContent = l.name;
+    name.title = l.about;
     const hint = document.createElement("span");
     hint.className = "fhint" + (on && h && !h.ok && !idle ? " bad" : "");
+    hint.title = l.about;
+    // Short status only; what each list is lives in the tooltip.
     hint.textContent = !on ? "Off."
-      : idle ? "Only read when \u201cnew grad\u201d is a role type in Search."
-      : h && !h.ok ? `Down on the last scan: ${h.error}`
-      : h ? `${h.count} open roles last scan. ${l.about}`
+      : idle ? "Only read when \u201cnew grad\u201d is a role type."
+      : h && !h.ok ? `Down: ${h.error}`
+      : h ? `${h.count} open roles last scan${l.note ? ` \u00b7 ${l.note}` : ""}`
       : l.about;
     text.append(name, hint);
     const sw = document.createElement("button");
@@ -655,6 +688,7 @@ function renderSources() {
   const health = Object.fromEntries(sources.map((s) => [s.name, s]));
 
   renderLists(c, health);
+  renderUsajobs(c, health);
 
   const box = el("companies");
   box.textContent = "";
@@ -1013,6 +1047,26 @@ el("autostart").addEventListener("click", async () => {
   } catch (err) { flashSaved(`couldn't change: ${err}`, true); }
 });
 el("addbtn").addEventListener("click", addCompany);
+el("useusajobs").addEventListener("click", () => { changed((c) => { c.use_usajobs = !c.use_usajobs; }); refit(); });
+el("usajobsemail").addEventListener("input", (e) => changed((c) => { c.usajobs_email = e.target.value.trim(); }));
+el("saveusajobskey").addEventListener("click", async () => {
+  const input = el("usajobskey");
+  const kh = el("usajobskeyhint");
+  if (!input.value.trim()) {
+    kh.className = "fhint bad";
+    kh.textContent = "Paste the key first.";
+    return;
+  }
+  try {
+    await invoke("set_usajobs_key", { key: input.value });
+    input.value = "";
+    await loadSettings();
+    flashSaved("USAJobs key saved to Keychain");
+  } catch (err) {
+    kh.className = "fhint bad";
+    kh.textContent = `Couldn't save key: ${err}`;
+  }
+});
 el("addco").addEventListener("keydown", (e) => { if (e.key === "Enter") addCompany(); });
 el("exportweek").addEventListener("click", async () => {
   try {

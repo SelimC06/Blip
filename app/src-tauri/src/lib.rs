@@ -237,6 +237,7 @@ struct SettingsDto {
     /// What the resume says about work authorization, for the "From my
     /// resume" option ("citizen", "needs_sponsorship", "unknown", …).
     resume_authorization: String,
+    has_usajobs_key: bool,
 }
 
 fn profile_summary() -> String {
@@ -261,6 +262,7 @@ fn get_settings() -> Result<SettingsDto, String> {
     let log = cfg.applied_log_path();
     Ok(SettingsDto {
         has_api_key: secrets::has_stored_anthropic_key(),
+        has_usajobs_key: secrets::usajobs_key().is_some(),
         applied_log_resolved: log.to_string_lossy().into_owned(),
         applied_log_exists: log.exists(),
         profile_summary: profile_summary(),
@@ -292,6 +294,19 @@ fn set_api_key(key: String) -> Result<(), String> {
 #[tauri::command]
 fn clear_api_key() -> Result<(), String> {
     secrets::delete_anthropic_key().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_usajobs_key(key: String) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("key is empty".into());
+    }
+    secrets::set_usajobs_key(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_usajobs_key() -> Result<(), String> {
+    secrets::delete_usajobs_key().map_err(|e| e.to_string())
 }
 
 /// Pick a resume and save it to config. None if the user cancelled.
@@ -679,6 +694,8 @@ pub fn run() {
             save_settings,
             set_api_key,
             clear_api_key,
+            set_usajobs_key,
+            clear_usajobs_key,
             pick_resume,
             rebuild_profile,
             pick_applied_log,
