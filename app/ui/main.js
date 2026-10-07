@@ -9,7 +9,7 @@ const LAYERS = { pill: el("pillLayer"), panel: el("panelLayer"), settings: el("s
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const PILL = { w: 136, h: 40, r: 20 };
+const PILL = { w: 146, h: 40, r: 20 };
 const CARD_RADIUS = 16;
 const SURFACE_RIGHT = 16, SURFACE_TOP = 8;
 
@@ -208,8 +208,11 @@ async function refit() {
 // ---------- rendering ----------
 
 function render() {
+  const nothingFound = state.status === "complete" && !state.results.length;
   surface.dataset.status = state.status;
-  el("pilltext").textContent = LABELS[state.status] || state.status;
+  surface.dataset.empty = nothingFound;
+  el("pilltext").textContent = nothingFound ? "No matches" : LABELS[state.status] || state.status;
+  el("openall").disabled = !state.results.length;
   el("pausebtn").innerHTML = state.paused ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
   LAYERS.pill.title = state.status === "scanning" ? "Click to stop this scan"
     : state.status === "error" ? `${state.message}\nClick to fix it in Settings.` : "";
@@ -232,7 +235,23 @@ function renderJobs() {
   if (!state.results.length) {
     const d = document.createElement("div");
     d.className = "empty";
-    d.textContent = state.status === "scanning" ? "Scanning…" : "No new matches this cycle.";
+    if (state.status === "scanning") {
+      d.textContent = "Scanning…";
+    } else {
+      const p = document.createElement("p");
+      p.textContent = `Nothing new scored ${settings?.config.min_score ?? 60} or higher this time. Blip checks again in ${state.cycle_minutes} minutes.`;
+      const tip = document.createElement("p");
+      tip.className = "etip";
+      tip.textContent = "Few results? Try a longer posting age in Settings → Search.";
+      const again = document.createElement("button");
+      again.className = "btn";
+      again.textContent = "scan again";
+      again.onclick = () => {
+        invoke("scan_now").catch(() => {});
+        setView("pill");
+      };
+      d.append(p, tip, again);
+    }
     jobs.appendChild(d);
     return;
   }
@@ -358,7 +377,7 @@ LAYERS.pill.addEventListener("click", (e) => {
     openSetup();
   } else if (state.status === "error") {
     openSettingsFor(state.message);
-  } else if (state.status === "complete" && state.results.length) setView("panel");
+  } else if (state.status === "complete") setView("panel"); // even when empty: it explains, it doesn't rescan
   else invoke("scan_now").catch(() => {});
 });
 // An error opens Settings on the tab where it gets fixed.

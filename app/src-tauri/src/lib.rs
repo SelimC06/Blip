@@ -86,7 +86,7 @@ struct HitRect {
 }
 
 const WIN_W: f64 = 430.0;
-const INITIAL_HIT: HitRect = HitRect { x: WIN_W - 16.0 - 136.0, y: 8.0, w: 136.0, h: 40.0 };
+const INITIAL_HIT: HitRect = HitRect { x: WIN_W - 16.0 - 146.0, y: 8.0, w: 146.0, h: 40.0 };
 
 fn set_state(app: &AppHandle, shared: &Shared, f: impl FnOnce(&mut UiState)) {
     let snapshot = {
