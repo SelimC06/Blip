@@ -224,7 +224,9 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 /* While settings are open the layer stretches to the surface, so the footer
    rides the animated bottom edge; the pane area clips/reveals in between. */
 #setLayer.stretch, #setupLayer.stretch { bottom: 0; }
-.panes { position: relative; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+/* Never scrolls: the card grows to fit the whole section instead. Overflow is
+   only clipped so the sliding sections don't spill sideways mid-switch. */
+.panes { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 
 /* Source health: two compact columns of status dots. */
 .sources { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }

@@ -141,7 +141,10 @@ function targetDims(v) {
     const pane = panes.querySelector(`:scope > .pane[data-pane="${panes.dataset.active}"]`);
     h = h - panes.offsetHeight + pane.offsetHeight;
   }
-  return { w: layer.offsetWidth + 2, h: Math.min(h, 470) + 2, r: CARD_RADIUS };
+  // Only the results list caps its height (and scrolls inside); settings and
+  // setup always grow to show everything at once.
+  const cap = v === "panel" ? 470 : window.innerHeight - SURFACE_TOP - 4;
+  return { w: layer.offsetWidth + 2, h: Math.min(h, cap) + 2, r: CARD_RADIUS };
 }
 
 function reportHitRect(d) {
