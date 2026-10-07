@@ -15,21 +15,32 @@ const REPOS: &[(&str, &str)] = &[
     ("SimplifyJobs/Summer2026-Internships", "Summer 2026"),
 ];
 
+/// The new-grad list: same table format; roles have no season.
+pub const NEW_GRAD_REPO: &str = "SimplifyJobs/New-Grad-Positions";
+
 pub fn fetch(client: &reqwest::blocking::Client) -> Result<Vec<Posting>> {
     for (repo, season) in REPOS {
-        let url = format!("https://raw.githubusercontent.com/{repo}/dev/README.md");
-        match client.get(&url).send() {
-            Ok(resp) if resp.status().is_success() => {
-                let body = resp.text()?;
-                let postings = parse_html_rows(&body, season, repo);
-                if !postings.is_empty() {
-                    return Ok(postings);
-                }
-            }
-            _ => continue,
+        if let Some(postings) = fetch_repo(client, repo, season)? {
+            return Ok(postings);
         }
     }
     Err(anyhow!("no SimplifyJobs README yielded postings"))
+}
+
+pub fn fetch_new_grad(client: &reqwest::blocking::Client) -> Result<Vec<Posting>> {
+    fetch_repo(client, NEW_GRAD_REPO, "")?
+        .ok_or_else(|| anyhow!("the SimplifyJobs new-grad README yielded no postings"))
+}
+
+fn fetch_repo(client: &reqwest::blocking::Client, repo: &str, season: &str) -> Result<Option<Vec<Posting>>> {
+    let url = format!("https://raw.githubusercontent.com/{repo}/dev/README.md");
+    match client.get(&url).send() {
+        Ok(resp) if resp.status().is_success() => {
+            let postings = parse_html_rows(&resp.text()?, season, repo);
+            Ok((!postings.is_empty()).then_some(postings))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn parse_html_rows(html: &str, season: &str, repo: &str) -> Vec<Posting> {

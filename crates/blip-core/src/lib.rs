@@ -54,6 +54,13 @@ pub fn run_scan(
     if cfg.use_simplify {
         record("github:simplify".into(), sources::simplify::fetch(&client), &mut all);
     }
+    // Only worth the download when the user wants new-grad roles at all.
+    if cfg.use_simplify_new_grad && cfg.role_types.iter().any(|t| t == "new-grad") {
+        record("github:simplify-new-grad".into(), sources::simplify::fetch_new_grad(&client), &mut all);
+    }
+    if cfg.use_vansh {
+        record("github:vanshb03".into(), sources::vansh::fetch(&client), &mut all);
+    }
     for company in &cfg.companies {
         if cancelled() {
             return Err(Cancelled.into());

@@ -128,7 +128,12 @@ pub fn hard_filter(cfg: &Config, p: &Posting, authorization: &str) -> bool {
         let matches_type = cfg.role_types.iter().any(|t| match t.as_str() {
             "internship" => ROLE_INTERNSHIP.is_match(&p.title),
             "co-op" => ROLE_COOP.is_match(&p.title),
-            "new-grad" => ROLE_NEW_GRAD.is_match(&p.title),
+            // New-grad list titles are plain ("Software Engineer 1"); the
+            // list itself is what makes them new-grad roles.
+            "new-grad" => {
+                ROLE_NEW_GRAD.is_match(&p.title)
+                    || p.source.ends_with(crate::sources::simplify::NEW_GRAD_REPO)
+            }
             _ => false,
         });
         if !matches_type {

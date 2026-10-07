@@ -605,19 +605,56 @@ async function loadSettings() {
 let justAdded = null; // source name of the chip to pop in
 
 // Company chips: health from the last scan, roles found, and remove.
+// Community-maintained lists, each with its own switch and last-scan health.
+const LISTS = [
+  { key: "use_simplify", source: "github:simplify", name: "SimplifyJobs internships",
+    about: "Internships across hundreds of companies. Most of what Blip finds." },
+  { key: "use_vansh", source: "github:vanshb03", name: "vanshb03 internships",
+    about: "A second list that catches roles Simplify misses, and marks which ones won't sponsor." },
+  { key: "use_simplify_new_grad", source: "github:simplify-new-grad", name: "SimplifyJobs new grad",
+    about: "Full-time roles for graduating students.", needs: "new-grad" },
+];
+
+function renderLists(c, health) {
+  const box = el("lists");
+  box.textContent = "";
+  for (const l of LISTS) {
+    const on = !!c[l.key];
+    const h = health[l.source];
+    const idle = l.needs && !c.role_types.includes(l.needs);
+    const row = document.createElement("div");
+    row.className = "listrow";
+    const text = document.createElement("div");
+    text.className = "stack";
+    const name = document.createElement("span");
+    name.className = "lname";
+    name.textContent = l.name;
+    const hint = document.createElement("span");
+    hint.className = "fhint" + (on && h && !h.ok && !idle ? " bad" : "");
+    hint.textContent = !on ? "Off."
+      : idle ? "Only read when \u201cnew grad\u201d is a role type in Search."
+      : h && !h.ok ? `Down on the last scan: ${h.error}`
+      : h ? `${h.count} open roles last scan. ${l.about}`
+      : l.about;
+    text.append(name, hint);
+    const sw = document.createElement("button");
+    sw.className = "switch" + (on ? " on" : "");
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-checked", on);
+    sw.setAttribute("aria-label", `Read ${l.name}`);
+    sw.innerHTML = "<span></span>";
+    sw.onclick = () => changed((cfg) => { cfg[l.key] = !cfg[l.key]; });
+    row.append(text, sw);
+    box.appendChild(row);
+  }
+}
+
 function renderSources() {
   if (!settings) return;
   const c = settings.config;
   const health = Object.fromEntries(sources.map((s) => [s.name, s]));
 
-  el("usesimplify").classList.toggle("on", c.use_simplify);
-  el("usesimplify").setAttribute("aria-checked", c.use_simplify);
-  const sh = health["github:simplify"];
-  el("simplifyhint").textContent = !c.use_simplify
-    ? "Off. Only the companies below are read."
-    : sh && !sh.ok ? `Down on the last scan: ${sh.error}`
-    : sh ? `${sh.count} roles last scan, across hundreds of companies.`
-    : "Community list of internships across hundreds of companies.";
+  renderLists(c, health);
 
   const box = el("companies");
   box.textContent = "";
@@ -939,7 +976,6 @@ el("autostart").addEventListener("click", async () => {
     flashSaved(autostart ? "starts at login" : "won't start at login");
   } catch (err) { flashSaved(`couldn't change: ${err}`, true); }
 });
-el("usesimplify").addEventListener("click", () => changed((c) => { c.use_simplify = !c.use_simplify; }));
 el("addbtn").addEventListener("click", addCompany);
 el("addco").addEventListener("keydown", (e) => { if (e.key === "Enter") addCompany(); });
 el("exportweek").addEventListener("click", async () => {

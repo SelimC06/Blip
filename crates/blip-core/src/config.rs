@@ -91,6 +91,10 @@ pub struct Config {
     pub companies: Vec<CompanyEntry>,
     /// Read the SimplifyJobs community list (most of Blip's postings).
     pub use_simplify: bool,
+    /// Read the SimplifyJobs new-grad list (only when "new grad" is a role type).
+    pub use_simplify_new_grad: bool,
+    /// Read the vanshb03 / Ouckah internship list.
+    pub use_vansh: bool,
     /// "ollama" (default, local) or "anthropic" (API key required).
     pub backend: String,
     pub ollama_url: String,
@@ -124,6 +128,8 @@ impl Default for Config {
             setup_done: false,
             companies: default_companies(),
             use_simplify: true,
+            use_simplify_new_grad: true,
+            use_vansh: true,
             backend: "ollama".into(),
             ollama_url: "http://localhost:11434".into(),
             chat_model: "gemma3:4b".into(),

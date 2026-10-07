@@ -2,6 +2,7 @@ pub mod ashby;
 pub mod greenhouse;
 pub mod lever;
 pub mod simplify;
+pub mod vansh;
 
 use crate::config::CompanyEntry;
 use crate::model::Posting;

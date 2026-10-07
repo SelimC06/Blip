@@ -10,7 +10,7 @@ Runs on macOS and Windows.
 
 ## What it does
 
-- **Watches the job boards for you.** Blip reads the [SimplifyJobs](https://github.com/SimplifyJobs) community internship list, which covers hundreds of companies, plus the job boards of companies you choose on Greenhouse, Ashby, and Lever.
+- **Watches the job boards for you.** Blip reads two community-maintained internship lists, [SimplifyJobs](https://github.com/SimplifyJobs/Summer2027-Internships) and [vanshb03](https://github.com/vanshb03/Summer2027-Internships), which together cover hundreds of companies. It also reads SimplifyJobs' [new-grad list](https://github.com/SimplifyJobs/New-Grad-Positions) if you're looking for full-time roles, plus the job boards of companies you choose on Greenhouse, Ashby, and Lever.
 - **Remembers what it has seen.** It never shows you the same role twice, even when one job is listed on two sites under slightly different titles.
 - **Scores against your resume.** A local model reads each promising posting's full description and gives it a 0–100 match score with a one-line reason and any red flags, like a citizenship requirement or the wrong location.
 - **Shows only what's worth your time.** You get the top five. Roles scoring under 60 are never shown, so an empty panel means nothing good turned up.
@@ -63,7 +63,7 @@ You can run setup again any time from **Settings → Log**.
 | **Search** | Role types (internship, co-op, new grad), season, location (anywhere or US only, plus optional places like `NYC, Seattle, TX`), work authorization, max posting age, skip MS/PhD-only roles |
 | **Cycle** | How often to scan, active hours, pause on low battery, pause automatic scans, start at login, notifications for strong matches |
 | **Model** | Local Ollama model, or the Anthropic API with a key stored in your system keychain |
-| **Sources** | The SimplifyJobs list on or off, and your company watchlist. Add a company by typing its name or pasting its careers-page link. |
+| **Sources** | Turn each community list on or off, and manage your company watchlist. Add a company by typing its name or pasting its careers-page link. |
 | **Log** | Which spreadsheet ✓ writes to, export the last 7 days as CSV, run setup again |
 
 Changes save as you make them.
@@ -72,7 +72,7 @@ Changes save as you make them.
 
 Each cycle runs these steps:
 
-1. **Fetch.** Pull current listings from the SimplifyJobs list and every company in your watchlist.
+1. **Fetch.** Pull current listings from the community lists and every company in your watchlist.
 2. **Dedupe.** Each posting is fingerprinted by company, title, location, and season, and also matched by its job ID on the hiring platform. Anything already seen is skipped.
 3. **Filter.** Drop anything that fails a hard filter: role type, season, posting age, location, an MS/PhD requirement, or a work-authorization requirement stated in the description. These checks are free.
 4. **Shortlist.** Compare each remaining posting to your resume using embeddings and keep the 20 closest.
@@ -82,7 +82,7 @@ Each cycle runs these steps:
 
 **Deadlines.** Job feeds rarely publish deadlines, so Blip uses one only when the posting states it, or when the board lists it (some Greenhouse companies do). Roles closing within a week are flagged, and you get one reminder three days out.
 
-**Work authorization.** No job source reports sponsorship reliably. SimplifyJobs' own data says "Other" for over 99% of listings. So Blip reads each description for citizenship, security clearance, export-control (ITAR), and "won't sponsor" language, and filters based on your work authorization, which comes from your resume unless you override it.
+**Work authorization.** Few job sources report sponsorship. The vanshb03 list marks roles that don't sponsor (🛂) or need US citizenship (🇺🇸), but SimplifyJobs' own data says "Other" for over 99% of listings. So Blip also reads each description for citizenship, security clearance, export-control (ITAR), and "won't sponsor" language, and filters based on your work authorization, which comes from your resume unless you override it.
 
 ## Your data
 
@@ -135,13 +135,15 @@ The interface is plain HTML, CSS, and JavaScript in `app/ui/`, with no Node or b
 
 The GitHub Actions workflow in `.github/workflows/build.yml` builds macOS and Windows releases when you push a `v*` tag or run it by hand.
 
+> **The `.dmg` step fails or opens a Finder window?** Build with `CI=true cargo tauri build`. That skips the Finder automation that lays out the `.dmg` window, which can time out.
+
 > **macOS linker error mentioning `unknown architecture` and `MacOSX27.0.sdk`?** Your Command Line Tools linker is older than the newest SDK. Point the build at an older SDK, for example `export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk`, or update the Command Line Tools.
 
 ## Project layout
 
 ```
 crates/blip-core/        the pipeline, usable without any UI
-  src/sources/           SimplifyJobs, Greenhouse, Ashby, Lever, company lookup
+  src/sources/           community lists, Greenhouse, Ashby, Lever, company lookup
   src/score.rs           filters, embedding shortlist, LLM scoring, deadlines
   src/location.rs        location filter
   src/auth.rs            work-authorization filter
@@ -163,4 +165,4 @@ app/ui/                  the pill: HTML, CSS, JS, fonts
 
 ## Credits
 
-Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs) and the public Greenhouse, Ashby, and Lever job board APIs.
+Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), and the public Greenhouse, Ashby, and Lever job board APIs.
