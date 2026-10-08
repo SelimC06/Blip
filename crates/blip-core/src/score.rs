@@ -57,11 +57,6 @@ static NOT_A_GAP: LazyLock<Regex> =
 /// name a target field ("Product Intern"): below the "normal" bar of 70.
 const TITLE_ONLY_CAP: u8 = 65;
 
-/// Shortlist floor on resume similarity. Measured on real roles: titles of
-/// on-target roles scored 0.53–0.68 and off-target ones 0.49–0.59, so this
-/// only removes the clearly unrelated; the field filter and rubric do the rest.
-const SIMILARITY_FLOOR: f32 = 0.45;
-
 /// The model answers narrow questions; the score is computed here, so it
 /// can't contradict the model's own judgment the way a free-form number did
 /// ("not directly relevant", scored 65).
@@ -318,7 +313,8 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// Candidates already scored against the current profile reuse their cached
 /// score; only unscored ones go through the embedding prefilter and the LLM
-/// (up to `prefilter_top` per cycle). Fresh scores are saved to the store.
+/// (all that pass the hard filters, up to `max_scored_per_scan`). Fresh
+/// scores are saved to the store.
 /// `cancelled` is polled before each page fetch and each LLM call.
 pub fn rank(
     llm: &Llm,
@@ -376,27 +372,34 @@ fn score_new(
     authorization: &str,
     cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<Vec<Scored>> {
-    // Stage 1: embedding similarity prefilter.
-    eprintln!("prefiltering {} postings by embedding…", unscored.len());
-    // The start of the description, when the source gives one, says far
-    // more about the work than the title alone.
-    let texts: Vec<String> = unscored
-        .iter()
-        .map(|p| {
-            let lead: String = p.description.chars().take(300).collect();
-            format!("{} at {} — {}. {lead}", p.title, p.company, p.location)
-        })
-        .collect();
-    let embs = llm.embed(&texts)?;
-    let mut by_sim: Vec<(f32, Posting)> = embs
-        .iter()
-        .zip(unscored)
-        .map(|(e, p)| (cosine(e, &profile.embedding), p))
-        .collect();
-    by_sim.retain(|(sim, _)| *sim >= SIMILARITY_FLOOR);
-    by_sim.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    by_sim.truncate(cfg.prefilter_top);
-    let mut shortlist: Vec<Posting> = by_sim.into_iter().map(|(_, p)| p).collect();
+    // Everything that passed the hard filters gets scored. Only when more
+    // than the cap pass (loose filters) are they ranked by resume
+    // similarity to pick which to score first; the rest wait for the next
+    // scan. Below the cap the embedding step is skipped entirely.
+    let cap = cfg.max_scored_per_scan.max(1);
+    let mut shortlist: Vec<Posting> = if unscored.len() <= cap {
+        unscored
+    } else {
+        eprintln!("{} postings pass the filters; scoring the {cap} most similar first…", unscored.len());
+        // The start of the description, when the source gives one, says far
+        // more about the work than the title alone.
+        let texts: Vec<String> = unscored
+            .iter()
+            .map(|p| {
+                let lead: String = p.description.chars().take(300).collect();
+                format!("{} at {} — {}. {lead}", p.title, p.company, p.location)
+            })
+            .collect();
+        let embs = llm.embed(&texts)?;
+        let mut by_sim: Vec<(f32, Posting)> = embs
+            .iter()
+            .zip(unscored)
+            .map(|(e, p)| (cosine(e, &profile.embedding), p))
+            .collect();
+        by_sim.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        by_sim.truncate(cap);
+        by_sim.into_iter().map(|(_, p)| p).collect()
+    };
 
     // Fetch real job descriptions for the shortlist (cached in the store).
     let missing: Vec<(usize, String)> = shortlist
@@ -407,9 +410,11 @@ fn score_new(
         .collect();
     if !missing.is_empty() {
         eprintln!("fetching {} job descriptions…", missing.len());
-        for (i, text) in describe::fetch_missing(&missing, cancelled) {
-            shortlist[i].description = text;
-            store.save_description(&shortlist[i])?;
+        for batch in missing.chunks(32) {
+            for (i, text) in describe::fetch_missing(batch, cancelled) {
+                shortlist[i].description = text;
+                store.save_description(&shortlist[i])?;
+            }
         }
     }
     if cancelled() {
@@ -423,7 +428,7 @@ fn score_new(
         eprintln!("skipped {} roles you aren't eligible for (work authorization)", before - shortlist.len());
     }
 
-    // Stage 2: LLM scores each survivor.
+    // LLM scores each survivor.
     eprintln!("scoring {} candidates with {}…", shortlist.len(), chat_model_name(cfg));
     let system = scoring_prompt(cfg);
     let profile_str = serde_json::to_string(&profile.data).unwrap_or_default();

@@ -5,11 +5,14 @@
 use crate::config::Config;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 pub struct Llm {
     cfg: Config,
     client: reqwest::blocking::Client,
+    chat_calls: AtomicUsize,
+    embed_calls: AtomicUsize,
 }
 
 impl Llm {
@@ -20,7 +23,14 @@ impl Llm {
             client: reqwest::blocking::Client::builder()
                 .timeout(Duration::from_secs(300))
                 .build()?,
+            chat_calls: AtomicUsize::new(0),
+            embed_calls: AtomicUsize::new(0),
         })
+    }
+
+    /// Requests made so far: (chat, embedding batches).
+    pub fn calls(&self) -> (usize, usize) {
+        (self.chat_calls.load(Ordering::Relaxed), self.embed_calls.load(Ordering::Relaxed))
     }
 
     /// POST to Ollama with errors a person can act on: not running, or the
@@ -45,6 +55,7 @@ impl Llm {
         let mut out = Vec::with_capacity(texts.len());
         for chunk in texts.chunks(64) {
             let model = &self.cfg.embed_model;
+            self.embed_calls.fetch_add(1, Ordering::Relaxed);
             let resp = self.ollama_post("/api/embed", model, json!({ "model": model, "input": chunk }))?;
             let embs = resp["embeddings"]
                 .as_array()
@@ -64,6 +75,7 @@ impl Llm {
 
     /// One chat turn that must return JSON; parsed and returned as a Value.
     pub fn chat_json(&self, system: &str, user: &str) -> Result<Value> {
+        self.chat_calls.fetch_add(1, Ordering::Relaxed);
         match self.cfg.backend.as_str() {
             "anthropic" => self.anthropic_chat_json(system, user),
             _ => self.ollama_chat_json(system, user),

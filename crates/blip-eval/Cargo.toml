@@ -1,0 +1,12 @@
+[package]
+name = "blip-eval"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Offline evaluation of Blip's embedding prefilter against full-LLM scoring"
+
+[dependencies]
+anyhow = "1"
+blip-core = { path = "../blip-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

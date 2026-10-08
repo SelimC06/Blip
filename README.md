@@ -75,8 +75,8 @@ Each cycle runs these steps:
 1. **Fetch.** Pull current listings from the community lists and every company in your watchlist.
 2. **Dedupe.** Each posting is fingerprinted by company, title, location, and season, and also matched by its job ID on the hiring platform. Anything already seen is skipped.
 3. **Filter.** Drop anything that fails a hard filter: a title that's only about fields you didn't pick, role type, season, posting age, location, an MS/PhD requirement, or a work-authorization requirement stated in the description. These checks are free.
-4. **Shortlist.** Compare each remaining posting to your resume using embeddings and keep the 20 closest.
-5. **Read.** Fetch each shortlisted job's page so the model sees the real description. Ashby and Lever include descriptions in their feeds, and Workday and Oracle pages are read through the JSON behind them, since the pages themselves are JavaScript-only.
+4. **Cap.** Every posting that survives the filters gets scored. If more than 150 survive (very loose filters), the 150 most similar to your resume, by embeddings, are scored first and the rest wait for the next scan.
+5. **Read.** Fetch each remaining job's page so the model sees the real description. Ashby and Lever include descriptions in their feeds, and Workday and Oracle pages are read through the JSON behind them, since the pages themselves are JavaScript-only.
 6. **Score.** The model doesn't pick a number. It answers narrow questions: is the role's main work in your fields, which of the posting's requirements you meet, and which you're missing. Blip computes the score from those answers, so a role the model calls off-field can't score high. Roles judged from a title alone are capped unless the title itself names one of your fields.
 7. **Show.** Your top matches above the strictness bar (70 on "normal") appear in the panel. Scores are cached, so a role is never re-scored unless your resume, "looking for" note, or model changes.
 
@@ -144,7 +144,7 @@ The GitHub Actions workflow in `.github/workflows/build.yml` builds macOS and Wi
 ```
 crates/blip-core/        the pipeline, usable without any UI
   src/sources/           community lists, Greenhouse, Ashby, Lever, Workday, Oracle, company lookup
-  src/score.rs           filters, embedding shortlist, LLM scoring, deadlines
+  src/score.rs           filters, scoring cap, LLM scoring, deadlines
   src/location.rs        location filter
   src/auth.rs            work-authorization filter
   src/store.rs           SQLite: postings, dedupe, score cache, history

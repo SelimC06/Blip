@@ -82,8 +82,10 @@ pub struct Config {
     pub notify_threshold: u8,
     /// Skip automatic cycles on battery below this percent. 0 = never pause.
     pub battery_pause_below: u8,
-    /// How many embedding-prefiltered candidates the LLM deep-reads per cycle.
-    pub prefilter_top: usize,
+    /// Safety cap on LLM calls per scan for never-scored postings. Every
+    /// posting that passes the hard filters is scored; if more than this
+    /// pass (loose filters), the most resume-similar ones are scored first.
+    pub max_scored_per_scan: usize,
     /// Never surface a match below this score; an empty panel beats noise.
     pub min_score: u8,
     /// Most matches shown per scan (only ones clearing `min_score` count).
@@ -132,7 +134,7 @@ impl Default for Config {
             notify_enabled: true,
             notify_threshold: 90,
             battery_pause_below: 20,
-            prefilter_top: 20,
+            max_scored_per_scan: 150,
             min_score: 70,
             results_per_scan: 5,
             setup_done: false,
