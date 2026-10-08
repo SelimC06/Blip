@@ -165,6 +165,10 @@ app/ui/                  the pill: HTML, CSS, JS, fonts
 - **Rare deadlines.** Most postings don't state a deadline, so most roles won't have one.
 - **Company boards by name.** Typing a name finds a Greenhouse, Ashby, or Lever board only when its URL name matches, for example "Anduril" lives at `andurilindustries`. Workday and Oracle sites always need a link.
 
+## License
+
+MIT. See [LICENSE](LICENSE).
+
 ## Credits
 
 Fonts: [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [IBM Plex Sans](https://github.com/IBM/plex), both under the SIL Open Font License, included in `app/ui/fonts/`. Job data comes from [SimplifyJobs](https://github.com/SimplifyJobs), [vanshb03/Ouckah](https://github.com/vanshb03/Summer2027-Internships), the public Greenhouse, Ashby, and Lever job board APIs, amazon.jobs, the official USAJobs API, and the endpoints behind Workday and Oracle Recruiting career sites.
