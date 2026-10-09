@@ -106,7 +106,7 @@ impl Llm {
 
     fn anthropic_chat_json(&self, system: &str, user: &str) -> Result<Value> {
         let key = crate::secrets::anthropic_key().context(
-            "backend is \"anthropic\" but no API key is saved — add one in Settings → Model",
+            "backend is \"anthropic\" but no API key is saved — add one in Settings → General",
         )?;
         let resp: Value = self
             .client

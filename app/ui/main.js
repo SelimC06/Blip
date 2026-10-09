@@ -17,6 +17,7 @@ const ICONS = {
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>',
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="4" width="4.5" height="16" rx="1.2"></rect><rect x="14" y="4" width="4.5" height="16" rx="1.2"></rect></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="5.5" y="5.5" width="13" height="13" rx="2"></rect></svg>',
   cross: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
 };
 
@@ -213,7 +214,6 @@ function render() {
   surface.dataset.empty = nothingFound;
   el("pilltext").textContent = nothingFound ? "No matches" : LABELS[state.status] || state.status;
   el("openall").disabled = !state.results.length;
-  el("pausebtn").innerHTML = state.paused ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
   LAYERS.pill.title = state.status === "scanning" ? "Click to stop this scan"
     : state.status === "error" ? `${state.message}\nClick to fix it in Settings.` : "";
 
@@ -242,7 +242,7 @@ function renderJobs() {
       p.textContent = `Nothing new scored ${settings?.config.min_score ?? 60} or higher this time. Blip checks again in ${state.cycle_minutes} minutes.`;
       const tip = document.createElement("p");
       tip.className = "etip";
-      tip.textContent = "Few results? Try a longer posting age in Settings → Search.";
+      tip.textContent = "Few results? Try a longer posting age in Settings → Jobs.";
       const again = document.createElement("button");
       again.className = "btn";
       again.textContent = "scan again";
@@ -355,6 +355,47 @@ function notice(text, bad = false) {
   noticeTimer = setTimeout(() => { f.className = ""; f.title = ""; renderStats(); }, bad ? 6000 : 2200);
 }
 
+// Settings status strip: what Blip is doing and when it scans next.
+const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+function untilText(ms) {
+  const m = Math.max(1, Math.round((ms - Date.now()) / 60000));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}`;
+}
+// Mirrors Config::is_active_hour, including windows that wrap midnight.
+function inActiveHours(c, hour) {
+  const s = c.active_start_hour % 24, e = c.active_end_hour % 24;
+  return s === e || (s < e ? hour >= s && hour < e : hour >= s || hour < e);
+}
+function renderStrip() {
+  const c = settings?.config;
+  const n = state.results.length;
+  const last = state.last_scan_at
+    ? `last ${clockTime(state.last_scan_at)} · ${n} ${n === 1 ? "match" : "matches"}`
+    : "no scan yet";
+  let mode, main, sub;
+  if (state.status === "scanning") {
+    [mode, main, sub] = ["scanning", "Scanning…", "checking job lists and companies"];
+  } else if (state.status === "setup") {
+    [mode, main, sub] = ["waiting", "Waiting for setup", "General → first-run setup"];
+  } else if (state.paused) {
+    [mode, main, sub] = ["paused", "Paused", "automatic scans off · scan now still works"];
+  } else if (state.status === "error") {
+    [mode, main, sub] = ["error", "Last scan failed", last];
+  } else if (c && !inActiveHours(c, new Date().getHours())) {
+    [mode, main, sub] = ["waiting", `Resumes at ${hourLabel(c.active_start_hour)}`, last];
+  } else {
+    const when = state.next_scan_at && state.next_scan_at > Date.now() ? `in ${untilText(state.next_scan_at)}` : "soon";
+    [mode, main, sub] = ["idle", `Next scan ${when}`, last];
+  }
+  el("strip").dataset.state = mode;
+  el("stmain").textContent = main;
+  el("stsub").textContent = sub;
+  el("pausebtn").innerHTML = state.paused ? `${ICONS.play}resume` : `${ICONS.pause}pause`;
+  el("scannow").innerHTML = state.status === "scanning" ? `${ICONS.stop}stop` : `${ICONS.play}scan now`;
+}
+// Keeps "next scan in …" counting down while Settings is open.
+setInterval(() => { if (view === "settings") renderStrip(); }, 30_000);
+
 function renderStats() {
   if (el("stats").classList.contains("note")) return;
   const s = state.stats || {};
@@ -384,8 +425,8 @@ LAYERS.pill.addEventListener("click", (e) => {
 async function openSettingsFor(message) {
   const m = (message || "").toLowerCase();
   const tab = m.includes("resume") ? "profile"
-    : m.includes("ollama") || m.includes("model") || m.includes("api key") || m.includes("scoring") ? "model"
-    : "log";
+    : m.includes("sources failed") ? "sources"
+    : "general";
   await loadSettings();
   showTab(tab);
   setView("settings");
@@ -398,7 +439,15 @@ el("gear").addEventListener("click", async (e) => {
 });
 el("setclose").addEventListener("click", () => setView("pill"));
 el("minbtn").addEventListener("click", () => setView("pill"));
-el("scannow").addEventListener("click", () => { invoke("scan_now").catch(() => {}); setView("pill"); });
+el("scannow").addEventListener("click", () => {
+  if (state.status === "scanning") {
+    invoke("cancel_scan").catch(() => {});
+    el("stmain").textContent = "Stopping…";
+    return;
+  }
+  invoke("scan_now").catch(() => {});
+  setView("pill");
+});
 el("pausebtn").addEventListener("click", () => invoke("toggle_pause").catch(() => {}));
 el("quitbtn").addEventListener("click", () => invoke("quit_app").catch(() => {}));
 // ---------- history ----------
@@ -614,7 +663,7 @@ const LISTS = [
   { key: "use_simplify_new_grad", source: "github:simplify-new-grad", name: "SimplifyJobs new grad",
     about: "Full-time roles for graduating students.", needs: "new-grad" },
   { key: "use_amazon", source: "amazon", name: "Amazon", note: "worldwide",
-    about: "Internships from amazon.jobs, worldwide. Use \u201cUS only\u201d in Search to keep just US roles." },
+    about: "Internships from amazon.jobs, worldwide. Use \u201cUS only\u201d in Jobs to keep just US roles." },
 ];
 
 function renderUsajobs(c, health) {
@@ -803,6 +852,7 @@ function setSeg(id, value) {
 }
 
 function renderSettings() {
+  renderStrip(); // active hours can change what it says
   if (!settings) return;
   const c = settings.config;
 
@@ -841,7 +891,7 @@ function renderSettings() {
   el("notifyon").classList.toggle("on", c.notify_enabled);
   el("notifyon").setAttribute("aria-checked", c.notify_enabled);
   setSeg("notifyat", c.notify_threshold);
-  el("notifyat").style.opacity = c.notify_enabled ? 1 : 0.45;
+  el("notifyrow").style.opacity = c.notify_enabled ? 1 : 0.45;
 
   setSeg("interval", c.cycle_minutes);
   setSeg("perscan", c.results_per_scan);
@@ -861,7 +911,9 @@ function renderSettings() {
   ks.className = settings.has_api_key ? "fhint ok" : "fhint";
   el("savekey").textContent = settings.has_api_key ? "replace" : "save";
 
-  el("logpath").textContent = settings.applied_log_resolved;
+  // Home folder shortened to ~ so the path fits beside its buttons; full path on hover.
+  el("logpath").textContent = settings.applied_log_resolved.replace(/^(\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/, "~");
+  el("logpath").title = settings.applied_log_resolved;
   el("openlog").disabled = !settings.applied_log_exists;
 }
 
@@ -909,7 +961,15 @@ function flashSaved(text, bad = false) {
   savedTimer = setTimeout(() => { s.style.opacity = 0; }, bad ? 5000 : 1400);
 }
 
-const TAB_ORDER = ["profile", "search", "cycle", "model", "sources", "log"];
+const TAB_ORDER = ["profile", "jobs", "schedule", "sources", "general"];
+// One line under the tabs saying what each is for.
+const TAB_SUBS = {
+  profile: "Who Blip matches against.",
+  jobs: "What counts as a match.",
+  schedule: "When Blip scans on its own and when it pings you.",
+  sources: "Where Blip looks.",
+  general: "Set once, rarely touched.",
+};
 
 function moveTabIndicator(instant = false) {
   const btn = el("tabs").querySelector(`button[data-tab="${activeTab}"]`);
@@ -967,9 +1027,10 @@ function showTab(tab) {
     b.setAttribute("aria-selected", b.dataset.tab === tab);
   }
   moveTabIndicator();
+  el("tabsub").textContent = TAB_SUBS[tab];
   slidePanes(el("panes"), prevTab, tab, dir);
 
-  if (tab === "model") refreshModels();
+  if (tab === "general") refreshModels();
   refit();
 }
 

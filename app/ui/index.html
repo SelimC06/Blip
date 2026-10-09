@@ -40,69 +40,48 @@
     <header>
       <span class="label">settings</span>
       <div class="hbtns">
-        <button class="btn accent" id="scannow"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>scan now</button>
         <button class="btn icon histopen" title="History" aria-label="History"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><polyline points="3 4 3 9 8 9"></polyline><polyline points="12 7 12 12 15.5 14"></polyline></svg></button>
         <button class="btn" id="setclose">close</button>
       </div>
     </header>
 
+    <!-- What Blip is doing, with the two scan actions side by side. Same on every tab. -->
+    <div class="strip" id="strip" data-state="idle">
+      <span class="stdot"></span>
+      <div class="stxt"><b id="stmain"></b><span id="stsub"></span></div>
+      <button class="btn" id="pausebtn"></button>
+      <button class="btn accent" id="scannow"></button>
+      <i class="sbar" aria-hidden="true"></i>
+    </div>
+
     <div class="errbanner" id="errbanner" role="alert" hidden></div>
     <div class="seg tabs" id="tabs" role="tablist">
       <span class="seg-ind" id="tabind" aria-hidden="true"></span>
       <button role="tab" data-tab="profile" class="on">profile</button>
-      <button role="tab" data-tab="search">search</button>
-      <button role="tab" data-tab="cycle">cycle</button>
-      <button role="tab" data-tab="model">model</button>
+      <button role="tab" data-tab="jobs">jobs</button>
+      <button role="tab" data-tab="schedule">schedule</button>
       <button role="tab" data-tab="sources">sources</button>
-      <button role="tab" data-tab="log">log</button>
+      <button role="tab" data-tab="general">general</button>
     </div>
+    <p class="tabsub" id="tabsub">Who Blip matches against.</p>
 
     <div class="panes" id="panes" data-active="profile">
     <section class="pane" data-pane="profile">
+      <div class="grp">resume</div>
       <div class="field">
-        <div class="fhead"><span class="flabel">resume</span><button class="btn" id="pickresume">choose…</button></div>
-        <div class="fval" id="resumename">none yet</div>
+        <div class="fhead"><span class="fval" id="resumename">none yet</span><button class="btn" id="pickresume">choose…</button></div>
         <div class="fhint" id="resumesummary"></div>
       </div>
+      <div class="grp">what you want</div>
       <div class="field">
-        <label class="flabel" for="lookingfor">what you're looking for</label>
-        <textarea id="lookingfor" rows="3" spellcheck="false" placeholder="e.g. backend or ML internships, systems-heavy teams"></textarea>
+        <label class="flabel" for="lookingfor">in your own words</label>
+        <textarea id="lookingfor" rows="2" spellcheck="false" placeholder="e.g. backend or ML internships, systems-heavy teams"></textarea>
         <div class="fhint">Steers the match score alongside your resume.</div>
       </div>
       <div class="field">
-        <span class="flabel">fields you want</span>
+        <span class="flabel">fields</span>
         <div class="chips" id="fieldchips"></div>
         <div class="fhint">Roles whose titles are only about other fields are skipped before scoring.</div>
-      </div>
-      <div class="field">
-        <span class="flabel">how picky</span>
-        <div class="seg" id="strictness">
-          <button data-v="60">relaxed</button><button data-v="70">normal</button><button data-v="80">strict</button>
-        </div>
-        <div class="fhint" id="strictnesshint"></div>
-      </div>
-    </section>
-
-    <section class="pane" data-pane="search" hidden>
-      <div class="field">
-        <span class="flabel">role types</span>
-        <div class="chips" id="roletypes">
-          <button data-v="internship">internship</button>
-          <button data-v="co-op">co-op</button>
-          <button data-v="new-grad">new grad</button>
-        </div>
-      </div>
-      <div class="field">
-        <label class="flabel" for="season">season</label>
-        <input id="season" type="text" spellcheck="false" placeholder="Summer 2027">
-      </div>
-      <div class="field">
-        <span class="flabel">location</span>
-        <div class="seg" id="locscope">
-          <button data-v="anywhere">anywhere</button><button data-v="us">US only</button>
-        </div>
-        <input id="places" type="text" spellcheck="false" placeholder="near… e.g. NYC, Seattle, TX (optional)" aria-label="Preferred places">
-        <div class="fhint">Remote roles always count. Postings with an unclear location are kept.</div>
       </div>
       <div class="field">
         <label class="flabel" for="workauth">work authorization</label>
@@ -114,9 +93,34 @@
         </select>
         <div class="fhint" id="workauthhint"></div>
       </div>
+    </section>
+
+    <section class="pane" data-pane="jobs" hidden>
+      <div class="grp">what</div>
       <div class="field">
-        <span class="flabel">max posting age</span>
-        <div class="seg" id="maxage">
+        <span class="flabel">role types</span>
+        <div class="chips" id="roletypes">
+          <button data-v="internship">internship</button>
+          <button data-v="co-op">co-op</button>
+          <button data-v="new-grad">new grad</button>
+        </div>
+      </div>
+      <div class="field frow">
+        <label class="flabel" for="season">season</label>
+        <div class="ctl"><input id="season" type="text" spellcheck="false" placeholder="Summer 2027"></div>
+      </div>
+      <div class="grp">where</div>
+      <div class="field">
+        <div class="seg" id="locscope">
+          <button data-v="anywhere">anywhere</button><button data-v="us">US only</button>
+        </div>
+        <input id="places" type="text" spellcheck="false" placeholder="near… e.g. NYC, Seattle, TX (optional)" aria-label="Preferred places">
+        <div class="fhint">Remote roles always count. Unclear locations are kept.</div>
+      </div>
+      <div class="grp">filters</div>
+      <div class="field frow">
+        <span class="flabel">posted within</span>
+        <div class="seg ctl" id="maxage">
           <button data-v="1">1d</button><button data-v="3">3d</button><button data-v="7">7d</button><button data-v="14">14d</button><button data-v="30">30d</button>
         </div>
       </div>
@@ -124,59 +128,100 @@
         <span class="flabel">skip MS/PhD-only roles</span>
         <button class="switch" id="skipadv" role="switch" aria-label="Skip MS/PhD-only roles"><span></span></button>
       </div>
+      <div class="grp">match bar</div>
+      <div class="field">
+        <span class="flabel">how picky</span>
+        <div class="seg" id="strictness">
+          <button data-v="60">relaxed</button><button data-v="70">normal</button><button data-v="80">strict</button>
+        </div>
+        <div class="fhint" id="strictnesshint"></div>
+      </div>
+      <div class="field frow">
+        <span class="flabel">show up to</span>
+        <div class="seg ctl" id="perscan">
+          <button data-v="3">3</button><button data-v="5">5</button><button data-v="8">8</button><button data-v="10">10</button>
+        </div>
+      </div>
     </section>
 
-    <section class="pane" data-pane="cycle" hidden>
-      <div class="field">
-        <span class="flabel">scan every</span>
-        <div class="seg" id="interval">
+    <section class="pane" data-pane="schedule" hidden>
+      <div class="grp">automatic scans</div>
+      <div class="field frow">
+        <span class="flabel">every</span>
+        <div class="seg ctl" id="interval">
           <button data-v="15">15m</button><button data-v="30">30m</button><button data-v="60">1h</button><button data-v="120">2h</button><button data-v="240">4h</button>
         </div>
       </div>
-      <div class="field">
-        <span class="flabel">matches shown per scan</span>
-        <div class="seg" id="perscan">
-          <button data-v="3">3</button><button data-v="5">5</button><button data-v="8">8</button><button data-v="10">10</button>
-        </div>
-        <div class="fhint">At most this many. Only roles scoring 60 or higher are ever shown.</div>
-      </div>
-      <div class="field">
-        <span class="flabel">active hours</span>
-        <div class="hours">
+      <div class="field frow">
+        <span class="flabel">between</span>
+        <div class="hours ctl">
           <select id="hstart" aria-label="Start hour"></select>
-          <span class="dash">to</span>
+          <span class="dash">–</span>
           <select id="hend" aria-label="End hour"></select>
         </div>
-        <div class="fhint">Scan now works anytime.</div>
-      </div>
-      <div class="field">
-        <span class="flabel">pause on battery below</span>
-        <div class="seg" id="battery">
-          <button data-v="0">never</button><button data-v="10">10%</button><button data-v="20">20%</button><button data-v="30">30%</button>
-        </div>
       </div>
       <div class="field frow">
-        <span class="flabel">automatic scans</span>
-        <button class="btn" id="pausebtn"></button>
-      </div>
-      <div class="field frow">
-        <span class="flabel">start at login</span>
-        <button class="switch" id="autostart" role="switch" aria-label="Start at login"><span></span></button>
-      </div>
-      <div class="field">
-        <div class="fhead">
-          <span class="flabel">notify me at match ≥</span>
-          <button class="switch" id="notifyon" role="switch" aria-label="Notifications"><span></span></button>
+        <span class="flabel">skip on battery below</span>
+        <div class="seg ctl" id="battery">
+          <button data-v="0">off</button><button data-v="10">10%</button><button data-v="20">20%</button><button data-v="30">30%</button>
         </div>
-        <div class="seg" id="notifyat">
+      </div>
+      <div class="grp">notifications</div>
+      <div class="field frow">
+        <span class="flabel">notify me</span>
+        <button class="switch" id="notifyon" role="switch" aria-label="Notifications"><span></span></button>
+      </div>
+      <div class="field frow" id="notifyrow">
+        <span class="flabel">for matches ≥</span>
+        <div class="seg ctl" id="notifyat">
           <button data-v="80">80</button><button data-v="85">85</button><button data-v="90">90</button><button data-v="95">95</button>
         </div>
       </div>
+      <div class="grp">startup</div>
+      <div class="field frow">
+        <span class="flabel">open Blip at login</span>
+        <button class="switch" id="autostart" role="switch" aria-label="Open Blip at login"><span></span></button>
+      </div>
     </section>
 
-    <section class="pane" data-pane="model" hidden>
+    <section class="pane" data-pane="sources" hidden>
+      <div class="grp">job lists</div>
       <div class="field">
-        <span class="flabel">engine</span>
+        <div class="lists" id="lists"></div>
+        <div id="usajobsfield">
+          <div class="listrow">
+            <div class="stack">
+              <span class="lname">USAJobs: federal internships</span>
+              <span class="fhint" id="usajobshint">Pathways internships and recent-graduate roles across federal agencies. Most require US citizenship.</span>
+            </div>
+            <button class="switch" id="useusajobs" role="switch" aria-label="Read USAJobs"><span></span></button>
+          </div>
+          <div id="usajobskeys" hidden>
+            <div class="inline" style="margin-top:8px">
+              <input id="usajobsemail" type="text" spellcheck="false" autocomplete="off" placeholder="email you registered the key with">
+            </div>
+            <div class="inline" style="margin-top:6px">
+              <input id="usajobskey" type="password" spellcheck="false" autocomplete="off" placeholder="API key">
+              <button class="btn" id="saveusajobskey">save</button>
+            </div>
+            <div class="fhint" id="usajobskeyhint" style="margin-top:6px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="grp">companies <span class="rval" id="cocount"></span></div>
+      <div class="field">
+        <div class="cos" id="companies"></div>
+        <div class="inline">
+          <input id="addco" type="text" spellcheck="false" autocomplete="off" placeholder="add: name, link, or name + link" aria-label="Add a company">
+          <button class="btn accent" id="addbtn">add</button>
+        </div>
+        <div class="fhint" id="addhint">Type a name for Greenhouse, Ashby, or Lever companies. For Workday or Oracle careers sites, paste a link, optionally with the name first: <span class="mono">General Motors https://…</span></div>
+      </div>
+    </section>
+
+    <section class="pane" data-pane="general" hidden>
+      <div class="grp">ai engine &amp; setup</div>
+      <div class="field">
         <div class="seg" id="backend">
           <button data-v="ollama">local · ollama</button><button data-v="anthropic">anthropic api</button>
         </div>
@@ -201,61 +246,21 @@
           <div class="fhint">Your resume and postings are sent to Anthropic for scoring.</div>
         </div>
       </div>
-    </section>
-
-    <section class="pane" data-pane="sources" hidden>
-      <div class="field">
-        <span class="flabel">job lists</span>
-        <div class="lists" id="lists"></div>
+      <div class="field frow">
+        <span class="flabel">first-run setup</span>
+        <button class="btn" id="rerunsetup">run again</button>
       </div>
-      <div class="field" id="usajobsfield">
-        <div class="listrow">
-          <div class="stack">
-            <span class="lname">USAJobs: federal internships</span>
-            <span class="fhint" id="usajobshint">Pathways internships and recent-graduate roles across federal agencies. Most require US citizenship.</span>
-          </div>
-          <button class="switch" id="useusajobs" role="switch" aria-label="Read USAJobs"><span></span></button>
-        </div>
-        <div id="usajobskeys" hidden>
-          <div class="inline" style="margin-top:8px">
-            <input id="usajobsemail" type="text" spellcheck="false" autocomplete="off" placeholder="email you registered the key with">
-          </div>
-          <div class="inline" style="margin-top:6px">
-            <input id="usajobskey" type="password" spellcheck="false" autocomplete="off" placeholder="API key">
-            <button class="btn" id="saveusajobskey">save</button>
-          </div>
-          <div class="fhint" id="usajobskeyhint" style="margin-top:6px"></div>
-        </div>
-      </div>
+      <div class="grp">applied log</div>
       <div class="field">
-        <div class="fhead"><span class="flabel">companies</span><span class="rval" id="cocount"></span></div>
-        <div class="cos" id="companies"></div>
-      </div>
-      <div class="field">
-        <label class="flabel" for="addco">add a company</label>
-        <div class="inline">
-          <input id="addco" type="text" spellcheck="false" autocomplete="off" placeholder="name, link, or name + link">
-          <button class="btn accent" id="addbtn">add</button>
-        </div>
-        <div class="fhint" id="addhint">Type a name for Greenhouse, Ashby, or Lever companies. For Workday or Oracle careers sites, paste a link, optionally with the name first: <span class="mono">General Motors https://…</span></div>
-      </div>
-    </section>
-
-    <section class="pane" data-pane="log" hidden>
-      <div class="field">
-        <div class="fhead"><span class="flabel">applied log</span>
+        <div class="fhead">
+          <span class="fval mono" id="logpath"></span>
           <div class="hbtns"><button class="btn" id="picklog">choose…</button><button class="btn" id="openlog">open</button></div>
         </div>
-        <div class="fval mono" id="logpath"></div>
         <div class="fhint">✓ adds a row to this spreadsheet. ✕ never does. Your own columns and edits are kept. If the file is open in Excel, Blip waits until you close it.</div>
       </div>
       <div class="field frow">
         <span class="flabel">last 7 days as CSV</span>
         <button class="btn" id="exportweek">export…</button>
-      </div>
-      <div class="field frow">
-        <span class="flabel">first-run setup</span>
-        <button class="btn" id="rerunsetup">run again</button>
       </div>
     </section>
     </div>

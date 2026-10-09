@@ -192,8 +192,6 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 .row:last-child { border-bottom: 0; }
 .rlabel { color: var(--phosphor); font-weight: 500; flex: none; line-height: 1; }
 .rval { color: var(--dim); font-size: 10px; line-height: 1.4; text-align: right; min-width: 0; }
-/* Fixed width so Pause ↔ Resume doesn't make the button jump. */
-#pausebtn { width: 84px; }
 .err { color: var(--red); word-break: break-word; }
 
 /* ---------- settings ---------- */
@@ -211,7 +209,56 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 }
 .seg button:hover { color: var(--phosphor); }
 .seg button.on { background: var(--void); color: var(--phosphor); box-shadow: inset 0 0 0 1px var(--line); font-weight: 500; }
-.tabs { margin: 10px 12px 2px 14px; position: relative; flex: none; }
+.tabs { margin: 10px 12px 0 14px; position: relative; flex: none; }
+/* One line under the tabs saying what the open tab is for. */
+.tabsub { flex: none; margin: 7px 12px 0 14px; color: var(--dim); font-family: var(--read); font-size: 11px; line-height: 15px; }
+
+/* Status strip: what Blip is doing, with pause and scan now side by side.
+   The dot follows the pill's language: glow = live, amber ping = scanning,
+   hollow ring = paused. */
+.strip {
+  position: relative; flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px 9px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.stdot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none; position: relative; margin-right: 2px;
+  background: var(--phosphor); box-shadow: 0 0 6px 1px rgba(237, 230, 214, .45);
+  transition: background .3s, box-shadow .3s;
+}
+.strip[data-state="scanning"] .stdot { background: var(--amber); box-shadow: 0 0 6px 1px rgba(251, 191, 36, .5); }
+.strip[data-state="scanning"] .stdot::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px solid rgba(251, 191, 36, .55);
+  animation: ping 1.4s cubic-bezier(.2, .6, .35, 1) infinite;
+}
+.strip[data-state="paused"] .stdot, .strip[data-state="waiting"] .stdot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--dim); }
+.strip[data-state="error"] .stdot { background: var(--red); box-shadow: 0 0 6px 1px rgba(248, 113, 113, .5); }
+.stxt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.stxt b, .stxt span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stxt b { font-weight: 500; font-size: 11px; line-height: 13px; }
+.stxt span { color: var(--dim); font-size: 9.5px; line-height: 11px; font-variant-numeric: tabular-nums; }
+/* Fixed widths so pause ↔ resume and scan now ↔ stop don't make the row jump. */
+#pausebtn, #scannow { white-space: nowrap; }
+#pausebtn { width: 80px; }
+#scannow { width: 94px; }
+.sbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; opacity: 0; transition: opacity .3s; }
+.strip[data-state="scanning"] .sbar { opacity: 1; }
+.sbar::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 34%; border-radius: 2px; background: var(--amber);
+  animation: sweep 1.6s cubic-bezier(.45, 0, .55, 1) infinite;
+}
+@keyframes sweep { from { left: -34%; } to { left: 100%; } }
+
+/* Group heading inside a tab: the unit settings are organized by. */
+.grp {
+  padding: 14px 0 0; font-size: 9.5px; font-weight: 600; letter-spacing: .12em; line-height: 1;
+  text-transform: uppercase; color: var(--dim);
+  display: flex; justify-content: space-between; align-items: baseline;
+}
+.pane > .grp:first-child { padding-top: 8px; }
+.grp .rval { font-weight: 400; letter-spacing: .02em; text-transform: none; font-size: 9.5px; }
+#lists + #usajobsfield { margin-top: 10px; }
+#notifyrow { transition: opacity .2s; }
 /* The last error, visible on every tab. */
 .errbanner {
   flex: none; margin: 10px 12px 0 14px; padding: 8px 10px; border-radius: 8px;
@@ -339,9 +386,17 @@ button:focus-visible { outline: 2px solid var(--signal-60); outline-offset: 2px;
 .jclose { color: var(--amber); font-size: 10px; line-height: 14px; margin-top: 4px; }
 .pane { padding: 6px 12px 10px 14px; display: flex; flex-direction: column; }
 .field { display: flex; flex-direction: column; gap: 7px; padding: 10px 0; }
-.field + .field, .field + #anthropicfields, .field + [hidden] + #anthropicfields { border-top: 1px solid var(--line); }
+.field + .field, .field + #anthropicfields, .field + [hidden] + #anthropicfields, #anthropicfields + .field { border-top: 1px solid var(--line); }
 .fhead, .frow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .frow { flex-direction: row; }
+.fhead .fval { flex: 1; min-width: 0; }
+.frow .flabel { line-height: 1.25; min-width: 0; }
+/* Short controls sit right of their label in one shared column, so they
+   line up down the tab. */
+.frow .ctl { width: 176px; flex: none; }
+.frow input[type="text"] { height: 28px; }
+.hours.ctl { gap: 6px; }
+.hours.ctl select { min-width: 0; height: 28px; padding-right: 22px; background-position: right 7px center; }
 .flabel { color: var(--phosphor); font-weight: 500; line-height: 1; }
 .fval { font-family: var(--read); font-size: 12px; color: var(--phosphor); overflow-wrap: anywhere; }
 .fval.mono { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
@@ -402,7 +457,8 @@ select {
 .card footer.note.bad { color: var(--red); }
 
 @media (prefers-reduced-motion: reduce) {
-  #surface[data-status="scanning"] .sdot::after { animation: none; }
+  #surface[data-status="scanning"] .sdot::after, .strip[data-state="scanning"] .stdot::after { animation: none; }
+  .sbar::after { animation: none; left: 0; width: 100%; opacity: .6; }
   .seg-ind, .stepdots i, .progress i { transition: none; }
   .co.added { animation: none; }
   .state.checking i { animation: none; }

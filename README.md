@@ -53,7 +53,7 @@ Blip walks you through five steps inside the pill:
 4. **Your preferences.** What you're looking for, role types, season, location, and how recent postings should be.
 5. **Start scanning.**
 
-You can run setup again any time from **Settings → Log**.
+You can run setup again any time from **Settings → General**.
 
 ## Settings
 

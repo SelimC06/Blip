@@ -64,6 +64,9 @@ struct UiState {
     cycle_minutes: u64,
     /// Automatic cycles paused (manual Scan now still works).
     paused: bool,
+    /// When the last cycle finished, and when the scheduler next wakes (Unix ms).
+    last_scan_at: Option<i64>,
+    next_scan_at: Option<i64>,
 }
 
 struct Shared {
@@ -526,6 +529,7 @@ fn run_cycle(app: &AppHandle, shared: &Shared) {
                 }
                 ui.results = results;
                 ui.stats = stats;
+                ui.last_scan_at = Some(chrono::Utc::now().timestamp_millis());
             });
         }
         Err(e) if e.is::<Cancelled>() => set_state(app, shared, |ui| {
@@ -638,7 +642,11 @@ fn scheduler(app: AppHandle, shared: Arc<Shared>, rx: Receiver<()>) {
         while rx.try_recv().is_ok() {}
 
         let minutes = config::load_or_create().map(|c| c.cycle_minutes).unwrap_or(30);
-        shared.ui.lock().unwrap().cycle_minutes = minutes;
+        let next = chrono::Utc::now().timestamp_millis() + minutes.max(1) as i64 * 60_000;
+        set_state(&app, &shared, |ui| {
+            ui.cycle_minutes = minutes;
+            ui.next_scan_at = Some(next);
+        });
         // Exactly one cycle per wake-up: a scan_now message cuts the wait
         // short and *replaces* the automatic cycle, it doesn't add one.
         manual = match rx.recv_timeout(Duration::from_secs(minutes.max(1) * 60)) {
