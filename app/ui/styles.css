@@ -36,13 +36,17 @@ svg { display: block; flex: none; }
 
 /* ---------- the morphing surface ---------- */
 #surface {
-  position: absolute; top: 8px; right: 16px;
+  position: absolute; top: 8px; right: 20px;
   width: 146px; height: 40px; border-radius: 20px;
   background: var(--void);
   border: 1px solid var(--signal-40);
   overflow: hidden;
-  transition: border-color .32s ease, box-shadow .38s ease;
+  transition: border-color .32s ease, box-shadow .38s ease, transform .3s cubic-bezier(.4, 0, .6, 1);
 }
+/* Idle: slid off the right screen edge, leaving the dot end showing.
+   Comes back with a little overshoot; leaves with a plain ease. */
+#surface.tucked { transform: translateX(var(--tuck)); }
+#surface.untucking { transition: border-color .32s ease, box-shadow .38s ease, transform .5s cubic-bezier(.34, 1.3, .44, 1); }
 #surface:not([data-view="pill"]) {
   border-color: var(--line);
   box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
@@ -459,7 +463,7 @@ select {
 @media (prefers-reduced-motion: reduce) {
   #surface[data-status="scanning"] .sdot::after, .strip[data-state="scanning"] .stdot::after { animation: none; }
   .sbar::after { animation: none; left: 0; width: 100%; opacity: .6; }
-  .seg-ind, .stepdots i, .progress i { transition: none; }
+  .seg-ind, .stepdots i, .progress i, #surface, #surface.untucking { transition: none; }
   .co.added { animation: none; }
   .state.checking i { animation: none; }
 }

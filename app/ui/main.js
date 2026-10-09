@@ -11,7 +11,7 @@ const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const PILL = { w: 146, h: 40, r: 20 };
 const CARD_RADIUS = 16;
-const SURFACE_RIGHT = 16, SURFACE_TOP = 8;
+const SURFACE_RIGHT = 20, SURFACE_TOP = 8;
 
 const ICONS = {
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4.6v14.8a1 1 0 0 0 1.52.85l12-7.4a1 1 0 0 0 0-1.7l-12-7.4A1 1 0 0 0 6 4.6z"></path></svg>',
@@ -149,7 +149,10 @@ function targetDims(v) {
 }
 
 function reportHitRect(d) {
-  const rect = { x: window.innerWidth - SURFACE_RIGHT - d.w, y: SURFACE_TOP, w: d.w, h: d.h };
+  // Tucked, only the sliver at the screen edge is there to hover.
+  const rect = tucked
+    ? { x: window.innerWidth - SLIVER, y: SURFACE_TOP, w: SLIVER, h: d.h }
+    : { x: window.innerWidth - SURFACE_RIGHT - d.w, y: SURFACE_TOP, w: d.w, h: d.h };
   invoke("set_hit_rect", { rect }).catch(() => {});
 }
 
@@ -160,6 +163,8 @@ async function setView(next) {
   const my = ++seq;
   const prev = view;
   view = next;
+  if (next === "panel") resultsSeen = true;
+  updateTuck();
 
   // Un-stretch before leaving settings: the surface is at the card's natural
   // height at this point, so nothing visibly moves.
@@ -190,7 +195,46 @@ async function setView(next) {
   if (my !== seq) return;
   reportHitRect(to);
   if (next === "settings" || next === "setup") LAYERS[next].classList.add("stretch");
+  if (next === "pill") updateTuck(TUCK_AFTER_CLOSE);
 }
+
+// ---------- tucking ----------
+
+// While nothing needs you, the pill slides off the right screen edge and
+// leaves a sliver with the status dot. Hovering the sliver brings it back.
+const SLIVER = 30;
+const TUCK_AFTER_STATE = 3000; // long enough to read "No matches" or "Paused"
+const TUCK_AFTER_CLOSE = 1200;
+const TUCK_AFTER_LEAVE = 700;
+surface.style.setProperty("--tuck", `${SURFACE_RIGHT + PILL.w - SLIVER}px`);
+let tucked = false, hovering = false, resultsSeen = false, tuckTimer = null;
+
+// Scanning, errors, setup and unopened results stay out where you can see them.
+function wantsTuck() {
+  if (view !== "pill" || hovering) return false;
+  const s = state.status;
+  return s === "rest" || s === "paused" || (s === "complete" && (!state.results.length || resultsSeen));
+}
+
+function updateTuck(delay = 0) {
+  clearTimeout(tuckTimer);
+  const want = wantsTuck();
+  if (want === tucked) return;
+  if (!want) return setTucked(false);
+  tuckTimer = setTimeout(() => { if (wantsTuck()) setTucked(true); }, delay);
+}
+
+function setTucked(on) {
+  tucked = on;
+  surface.classList.toggle("untucking", !on);
+  surface.classList.toggle("tucked", on);
+  if (view === "pill") reportHitRect(PILL);
+}
+
+listen("blip-hover", (e) => {
+  hovering = e.payload;
+  updateTuck(TUCK_AFTER_LEAVE);
+});
 
 // Card resizes in place (tab switch, row dismissed): a firm spring with a
 // whisper of overshoot. Keep the larger click area until it lands.
@@ -1499,7 +1543,9 @@ function onState(next) {
   const wasStatus = lastStatus;
   state = next;
   lastStatus = state.status;
+  if (state.status === "scanning") resultsSeen = false;
   render();
+  updateTuck(TUCK_AFTER_STATE);
   if (state.status === "setup" && !setupAutoOpened && view === "pill") {
     setupAutoOpened = true; // a fresh install greets you once; after "later" the pill waits
     openSetup();

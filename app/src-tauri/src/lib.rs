@@ -88,7 +88,7 @@ struct HitRect {
 }
 
 const WIN_W: f64 = 430.0;
-const INITIAL_HIT: HitRect = HitRect { x: WIN_W - 16.0 - 146.0, y: 8.0, w: 146.0, h: 40.0 };
+const INITIAL_HIT: HitRect = HitRect { x: WIN_W - 20.0 - 146.0, y: 8.0, w: 146.0, h: 40.0 };
 
 fn set_state(app: &AppHandle, shared: &Shared, f: impl FnOnce(&mut UiState)) {
     let snapshot = {
@@ -454,8 +454,11 @@ fn set_hit_rect(shared: State<Arc<Shared>>, rect: HitRect) {
 
 /// Webviews can't do per-pixel click-through, so poll the cursor and make
 /// the whole window click-through whenever it's outside the visible surface.
+/// Also tells the UI when the cursor enters or leaves the surface: once the
+/// window ignores the cursor, the webview never sees a mouseleave.
 fn click_through_loop(app: AppHandle, shared: Arc<Shared>) {
     let mut ignoring: Option<bool> = None;
+    let mut was_inside = false;
     loop {
         std::thread::sleep(Duration::from_millis(30));
         let Some(win) = app.get_webview_window("main") else { continue };
@@ -468,6 +471,10 @@ fn click_through_loop(app: AppHandle, shared: Arc<Shared>) {
         let ly = (cur.y - pos.y as f64) / scale;
         let r = *shared.hit.lock().unwrap();
         let inside = lx >= r.x && lx <= r.x + r.w && ly >= r.y && ly <= r.y + r.h;
+        if inside != was_inside {
+            was_inside = inside;
+            let _ = app.emit("blip-hover", inside);
+        }
         let ignore = !inside;
         if ignoring != Some(ignore) && win.set_ignore_cursor_events(ignore).is_ok() {
             ignoring = Some(ignore);
@@ -721,9 +728,9 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // Pin to the top-right of the monitor, under the menu bar. The
-            // surface sits 16px inside the canvas, so the pill lands ~20px
-            // from the screen edge.
+            // Pin to the top-right of the monitor, under the menu bar, flush
+            // with the screen's right edge so a tucked pill disappears behind
+            // it. The surface sits 20px inside the canvas.
             if let Some(win) = app.get_webview_window("main") {
                 if let Ok(Some(mon)) = win.current_monitor() {
                     let scale = mon.scale_factor();
@@ -733,10 +740,9 @@ pub fn run() {
                     let screen_h = mon.size().height as f64 / scale;
                     let height = (screen_h - 32.0 - 24.0).clamp(540.0, 1100.0);
                     let _ = win.set_size(tauri::LogicalSize::new(WIN_W, height));
-                    let pad = (4.0 * scale) as i32;
                     let top = (32.0 * scale) as i32;
                     let width = (WIN_W * scale).round() as i32;
-                    let x = mon.position().x + mon.size().width as i32 - width - pad;
+                    let x = mon.position().x + mon.size().width as i32 - width;
                     let y = mon.position().y + top;
                     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
                 }
