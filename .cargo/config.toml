@@ -1,0 +1,6 @@
+# The Command Line Tools linker (ld-1267) can't parse the macOS 27 SDK's
+# .tbd files ("unknown architecture arm64e.x1-macos"), so link against the
+# 26.5 SDK instead. Remove once a Command Line Tools update fixes the linker.
+# Ignored off macOS; an SDKROOT already set in the shell still wins.
+[env]
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
